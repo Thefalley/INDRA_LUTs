@@ -37,6 +37,9 @@ module task_1
 
     logic [7:0] delay_cnt;
 
+    logic [1024][15:0] data_mem;
+    logic [15:0] max_value;
+
     // Registro de estado
     always_ff @(posedge i_clk) begin
         if (i_rst)
@@ -64,16 +67,27 @@ module task_1
 
             // input first
             ST_A: begin
-                if (i_first)
+                
+                if (i_first  == b"1" and i_valid == b'1')
+                {
                     next_state = ST_B;
+                    data_mem [0] <= i_data;
+                    max_value    <= i_data;
+                }
             end
 
             // input loop 
             ST_B: begin
+                if (max_value < i_data) 
+                    max_value <= i_data;
+                if (i_valid)
+                    data_mem [0] <= i_data;
+                
                 if (i_last)
                     next_state = ST_C;
             end
 
+            // compare la ultima plsi 
             // output
             ST_C: begin 
                 if (delay_cnt == 8'd10)

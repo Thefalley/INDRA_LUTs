@@ -13,6 +13,7 @@ git checkout main
  
 # La actualizas
 git pull
+git fetch
  
 # Haces el merge de tu rama
 git merge <nombre_rama>
