@@ -20,25 +20,30 @@ module task_1
   output reg signed [TASK_OUTPUT_WIDTH-1:0] o_data
 );
 
-  always@(posedge i_clk) begin
-    o_data  <= i_data;  // Just a dummy assignement. Replace with your code.
-    o_valid <= i_valid; // Just a dummy assignement. Replace with your code.
-    o_last  <= i_last;  // Just a dummy assignement. Replace with your code.
-  end
+  // always@(posedge i_clk) begin
+  //   o_data  <= i_data;  // Just a dummy assignement. Replace with your code.
+  //   o_valid <= i_valid; // Just a dummy assignement. Replace with your code.
+  //   o_last  <= i_last;  // Just a dummy assignement. Replace with your code.
+  // end
 
 
     typedef enum logic [1:0] {
         ST_A,
         ST_B,
-        ST_C
+        ST_C,
+        ST_D
     } state_t;
 
     state_t state, next_state;
 
-    logic [7:0] delay_cnt;
+    logic [9:0] delay_cnt;
 
-    logic [1024][15:0] data_mem;
-    logic [15:0] max_value;
+    // logic signed [15:0] data_mem [1024];
+    // logic signed [15:0] max_value ;
+
+    logic signed [TASK_INPUT_WIDTH-1:0] max_value;
+    logic signed [TASK_INPUT_WIDTH-1:0] data_mem [0:1023];
+
 
     // Registro de estado
     always_ff @(posedge i_clk) begin
@@ -48,49 +53,83 @@ module task_1
             state <= next_state;
     end
 
-    // Contador de delay
+    // Contador: en ST_B es el índice de memoria; en ST_D cuenta la espera.
     always_ff @(posedge i_clk) begin
         if (i_rst)
-            delay_cnt <= 8'd0;
-        else if (state != ST_A)
-            delay_cnt <= 8'd0;
-        else
-            delay_cnt <= delay_cnt + 1'b1;
+            delay_cnt <= 10'd0;
+        else begin
+            case (state)
+                ST_A: delay_cnt <= (i_valid && i_first) ? 10'd1 : 10'd0;
+                ST_B: begin
+                    if (i_valid && i_last)
+                        delay_cnt <= 10'd0;
+                    else if (i_valid)
+                        delay_cnt <= delay_cnt + 10'd1;
+                end
+                ST_C: delay_cnt <= 10'd0;
+                ST_D: delay_cnt <= delay_cnt + 10'd1;
+                default: delay_cnt <= 10'd0;
+            endcase
+        end
+    end
+
+    // BLOQUE SECUENCIAL: memoria y máximo se guardan con el reloj.
+    // MAL: actualizar data_mem o max_value dentro de always_comb.
+    always_ff @(posedge i_clk) begin
+        if (i_rst)
+            max_value <= {1'b1, {(TASK_INPUT_WIDTH-1){1'b0}}};
+        if (state == ST_A) begin
+            max_value <= {1'b1, {(TASK_INPUT_WIDTH-1){1'b0}}};
+        end else if (state == ST_A && i_valid && i_first) begin
+            data_mem[0] <= i_data;
+            max_value <= i_data;
+        end else if (state == ST_B && i_valid) begin
+            data_mem[delay_cnt] <= i_data;
+            if (i_data > max_value)
+                max_value <= i_data;
+        end
     end
 
     // Lógica de transición
     always_comb begin
 
         next_state = state;
+        // Valores por defecto: evitan que las salidas retengan valores previos.
+        o_valid = 1'b0;
+        o_last  = 1'b0;
+        o_data  = '0;
 
         case (state)
 
             // input first
             ST_A: begin
                 
-                if (i_first  == b"1" and i_valid == b'1')
-                {
+                if (i_first  == 1'b1 && i_valid == 1'b1) begin
                     next_state = ST_B;
-                    data_mem [0] <= i_data;
-                    max_value    <= i_data;
-                }
+                end
             end
 
             // input loop 
             ST_B: begin
-                if (max_value < i_data) 
-                    max_value <= i_data;
-                if (i_valid)
-                    data_mem [0] <= i_data;
                 
-                if (i_last)
-                    next_state = ST_C;
+                if (i_valid) begin
+                    if (i_last)
+                        next_state = ST_C;
+                end
             end
 
             // compare la ultima plsi 
             // output
             ST_C: begin 
-                if (delay_cnt == 8'd10)
+                // En always_comb se usa =; <= se reserva para always_ff.
+                o_valid  = 1'b1;
+                o_last   = 1'b1;
+                o_data   = max_value;
+                next_state = ST_D;
+            end
+
+            ST_D: begin 
+                if (delay_cnt == 10'd10)
                     next_state = ST_A;
             end
 
@@ -98,21 +137,6 @@ module task_1
                 next_state = ST_A;
 
         endcase
-    end
-
-    // Salidas Moore
-    always_comb begin
-
-        estado_a = 1'b0;
-        estado_b = 1'b0;
-        estado_c = 1'b0;
-
-        case (state)
-            ST_A: estado_a = 1'b1;
-            ST_B: estado_b = 1'b1;
-            ST_C: estado_c = 1'b1;
-        endcase
-
     end
 
 endmodule
