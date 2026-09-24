@@ -68,7 +68,7 @@ module task_1
                     next_state = ST_B;
             end
 
-            // input loop
+            // input loop 
             ST_B: begin
                 if (i_last)
                     next_state = ST_C;
