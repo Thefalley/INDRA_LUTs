@@ -7,57 +7,69 @@ module task_5 #(
     parameter int MAX_MSG_LENGTH    = 1024,
     parameter int ALPHABET_SIZE     = 128
 ) (
-    input wire                         i_clk,
-    input wire                         i_rst,
+    input wire                          i_clk,
+    input wire                          i_rst,
 
-    input wire                         i_valid,
-    input wire                         i_first,
-    input wire                         i_last,
-    input wire [TASK_INPUT_WIDTH-1:0] i_data,
+    input wire                          i_valid,
+    input wire                          i_first,
+    input wire                          i_last,
+    input wire [TASK_INPUT_WIDTH-1:0]  i_data,
 
-    output logic                         o_valid,
-    output logic                         o_last,
+    output logic                        o_valid,
+    output logic                        o_last,
     output logic [TASK_OUTPUT_WIDTH-1:0] o_data
 );
 
-    // Prefijo conocido de referencia para la verificación
     localparam int PREFIX_LEN = 45;
-    localparam byte PREFIX[0:PREFIX_LEN-1] = '{
-        "H", "e", "l", "l", "o", ",", " ", "F", "P", "G", "A", " ", 
-        "H", "a", "c", "k", "a", "t", "h", "o", "n", "!", " ", "Y", 
-        "o", "u", "r", " ", "s", "e", "c", "r", "e", "t", " ", "m", 
-        "e", "s", "s", "a", "g", "e", " ", "i", "s", ":", " "
-    };
 
-    // Almacenamiento del mensaje de entrada
-    logic [7:0] msg_mem [0:MAX_MSG_LENGTH-1];
+    // Memoria para el mensaje de entrada
+    (* ram_style = "block" *) logic [7:0] msg_mem [0:MAX_MSG_LENGTH-1];
     logic [10:0] msg_length;
     logic [10:0] rx_cnt;
 
     // Registros para el espacio de búsqueda brute-force
-    logic [6:0] key_r0;
-    logic [6:0] key_r1;
-    logic [6:0] key_ref;
+    logic [6:0] key_r0, key_r1, key_ref;
+    logic [6:0] cur_r0, cur_r1;
+    logic [5:0] check_idx;
 
-    // Rotores para simular el avance durante la verificación/desencriptación
+    // Rotores para transmisión
     logic [6:0] rot0, rot1;
-    logic [15:0] step_cnt;
+    logic [10:0] tx_cnt;
 
-    // Estados de la máquina de estados
     typedef enum logic [2:0] {
         ST_IDLE,
         ST_STORE,
-        ST_CHECK_KEY,
+        ST_CHECK_INIT,
+        ST_CHECK_STEP,
         ST_ADVANCE_KEY,
         ST_STREAM_OUT
     } state_t;
 
     state_t state;
 
-    // Posición y control de lectura de salida
-    logic [10:0] tx_cnt;
+    // Mapeo sintetizable del prefijo
+    function automatic logic [7:0] get_prefix_char(input logic [5:0] idx);
+        case (idx)
+            6'd0:  get_prefix_char = "H"; 6'd1:  get_prefix_char = "e"; 6'd2:  get_prefix_char = "l";
+            6'd3:  get_prefix_char = "l"; 6'd4:  get_prefix_char = "o"; 6'd5:  get_prefix_char = ",";
+            6'd6:  get_prefix_char = " "; 6'd7:  get_prefix_char = "F"; 6'd8:  get_prefix_char = "P";
+            6'd9:  get_prefix_char = "G"; 6'd10: get_prefix_char = "A"; 6'd11: get_prefix_char = " ";
+            6'd12: get_prefix_char = "H"; 6'd13: get_prefix_char = "a"; 6'd14: get_prefix_char = "c";
+            6'd15: get_prefix_char = "k"; 6'd16: get_prefix_char = "a"; 6'd17: get_prefix_char = "t";
+            6'd18: get_prefix_char = "h"; 6'd19: get_prefix_char = "o"; 6'd20: get_prefix_char = "n";
+            6'd21: get_prefix_char = "!"; 6'd22: get_prefix_char = " "; 6'd23: get_prefix_char = "Y";
+            6'd24: get_prefix_char = "o"; 6'd25: get_prefix_char = "u"; 6'd26: get_prefix_char = "r";
+            6'd27: get_prefix_char = " "; 6'd28: get_prefix_char = "s"; 6'd29: get_prefix_char = "e";
+            6'd30: get_prefix_char = "c"; 6'd31: get_prefix_char = "r"; 6'd32: get_prefix_char = "e";
+            6'd33: get_prefix_char = "t"; 6'd34: get_prefix_char = " "; 6'd35: get_prefix_char = "m";
+            6'd36: get_prefix_char = "e"; 6'd37: get_prefix_char = "s"; 6'd38: get_prefix_char = "s";
+            6'd39: get_prefix_char = "a"; 6'd40: get_prefix_char = "g"; 6'd41: get_prefix_char = "e";
+            6'd42: get_prefix_char = " "; 6'd43: get_prefix_char = "i"; 6'd44: get_prefix_char = "s";
+            default: get_prefix_char = 8'h00;
+        endcase
+    endfunction
 
-    // --- Función de desencriptación de un solo carácter ---
+    // Función de desencriptación
     function automatic logic [7:0] decode_byte(
         input logic [7:0] in_char,
         input logic [6:0] r0,
@@ -66,22 +78,15 @@ module task_5 #(
     );
         logic [6:0] c;
         c = in_char[6:0];
-        
-        // Forward pass
         c = (c - 7'd1) ^ r0;
         c = (c - 7'd1) ^ r1;
-        
-        // Reflector
         c = c ^ ref_pos;
-        
-        // Backward pass
         c = (c - 7'd1) ^ r1;
         c = (c - 7'd1) ^ r0;
-
         return {1'b0, c};
     endfunction
 
-    // --- Lógica principal y FSM ---
+    // FSM Principal
     always_ff @(posedge i_clk) begin
         if (i_rst) begin
             state      <= ST_IDLE;
@@ -91,6 +96,7 @@ module task_5 #(
             key_r0     <= '0;
             key_r1     <= '0;
             key_ref    <= '0;
+            check_idx  <= '0;
             o_valid    <= 1'b0;
             o_last     <= 1'b0;
             o_data     <= '0;
@@ -98,10 +104,10 @@ module task_5 #(
             case (state)
                 ST_IDLE: begin
                     o_valid <= 1'b0;
-                    o_last  <= 1 me;
+                    o_last  <= 1'b0;
                     if (i_valid && i_first) begin
                         msg_mem[0] <= i_data;
-                        rx_cnt     <= 1;
+                        rx_cnt     <= 11'd1;
                         state      <= ST_STORE;
                     end
                 end
@@ -112,45 +118,34 @@ module task_5 #(
                         rx_cnt          <= rx_cnt + 1'b1;
                         if (i_last) begin
                             msg_length <= rx_cnt + 1'b1;
-                            // Iniciar búsqueda de clave
-                            key_r0   <= '0;
-                            key_r1   <= '0;
-                            key_ref  <= '0;
-                            state    <= ST_CHECK_KEY;
+                            key_r0     <= '0;
+                            key_r1     <= '0;
+                            key_ref    <= '0;
+                            state      <= ST_CHECK_INIT;
                         end
                     end
                 end
 
-                ST_CHECK_KEY: begin
-                    // Probar la clave actual comparando el primer carácter
-                    if (decode_byte(msg_mem[0], key_r0, key_r1, key_ref) == PREFIX[0]) begin
-                        // Si coincide el primer carácter, verificamos los siguientes
-                        logic match;
-                        logic [6:0] cur_r0, cur_r1;
-                        match = 1'b1;
-                        cur_r0 = key_r0;
-                        cur_r1 = key_r1;
+                ST_CHECK_INIT: begin
+                    cur_r0    <= key_r0;
+                    cur_r1    <= key_r1;
+                    check_idx <= '0;
+                    state     <= ST_CHECK_STEP;
+                end
 
-                        for (int i = 0; i < PREFIX_LEN; i++) begin
-                            if (decode_byte(msg_mem[i], cur_r0, cur_r1, key_ref) != PREFIX[i]) begin
-                                match = 1'b0;
-                                break;
-                            end
-                            // Avance de rotores (Youngest cada paso, segundo cada 10 pasos)
-                            cur_r0 = (cur_r0 + 1'b1) % 128;
-                            if ((i + 1) % 10 == 0) begin
-                                cur_r1 = (cur_r1 + 1'b1) % 128;
-                            end
-                        end
-
-                        if (match) begin
-                            // Clave encontrada, pasar a la salida
+                ST_CHECK_STEP: begin
+                    if (decode_byte(msg_mem[check_idx], cur_r0, cur_r1, key_ref) == get_prefix_char(check_idx)) begin
+                        if (check_idx == PREFIX_LEN - 1) begin
+                            // Clave válida encontrada
                             rot0   <= key_r0;
                             rot1   <= key_r1;
                             tx_cnt <= '0;
                             state  <= ST_STREAM_OUT;
                         end else begin
-                            state <= ST_ADVANCE_KEY;
+                            check_idx <= check_idx + 1'b1;
+                            cur_r0    <= cur_r0 + 1'b1;
+                            if ((check_idx + 1'b1) % 10 == 0)
+                                cur_r1 <= cur_r1 + 1'b1;
                         end
                     end else begin
                         state <= ST_ADVANCE_KEY;
@@ -158,11 +153,10 @@ module task_5 #(
                 end
 
                 ST_ADVANCE_KEY: begin
-                    // Incrementar el espacio de claves de 7 bits (0 a 127)
                     if (key_r0 == 7'd127) begin
                         key_r0 <= '0;
                         if (key_r1 == 7'd127) begin
-                            key_r1 <= '0;
+                            key_r1  <= '0;
                             key_ref <= key_ref + 1'b1;
                         end else begin
                             key_r1 <= key_r1 + 1'b1;
@@ -170,7 +164,7 @@ module task_5 #(
                     end else begin
                         key_r0 <= key_r0 + 1'b1;
                     end
-                    state <= ST_CHECK_KEY;
+                    state <= ST_CHECK_INIT;
                 end
 
                 ST_STREAM_OUT: begin
@@ -178,13 +172,12 @@ module task_5 #(
                         o_valid <= 1'b1;
                         o_data  <= decode_byte(msg_mem[tx_cnt], rot0, rot1, key_ref);
                         o_last  <= (tx_cnt == msg_length - 1'b1);
-                        
-                        // Actualizar avance de rotores en la transmisión
-                        rot0 <= (rot0 + 1'b1) % 128;
+
+                        rot0 <= rot0 + 1'b1;
                         if ((tx_cnt + 1'b1) % 10 == 0) begin
-                            rot1 <= (rot1 + 1'b1) % 128;
+                            rot1 <= rot1 + 1'b1;
                         end
-                        
+
                         tx_cnt <= tx_cnt + 1'b1;
                     end else begin
                         o_valid <= 1'b0;
@@ -192,6 +185,8 @@ module task_5 #(
                         state   <= ST_IDLE;
                     end
                 end
+
+                default: state <= ST_IDLE;
             endcase
         end
     end
