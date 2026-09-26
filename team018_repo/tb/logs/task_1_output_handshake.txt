@@ -1,0 +1,4 @@
+cycle=1 time=95000 OUT valid=1 last=0 data=91
+cycle=2 time=115000 OUT valid=1 last=0 data=a2
+cycle=3 time=135000 OUT valid=1 last=0 data=b3
+cycle=4 time=145000 OUT valid=1 last=1 data=c0
