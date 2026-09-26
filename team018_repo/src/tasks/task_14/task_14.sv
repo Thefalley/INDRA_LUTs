@@ -52,11 +52,6 @@ module task_14 #(
     assign addr_imm10 = instr[9:0];
     assign imm8       = instr[7:0];
 
-    // Valores leídos de registros
-    logic [7:0] rx_val, ry_val;
-    assign rx_val = rx_sel ? r1 : r0;
-    assign ry_val = ry_sel ? r1 : r0;
-
     // Señales de control para memoria de datos
     logic [9:0] dm_addr;
     logic [7:0] dm_din;
@@ -71,7 +66,7 @@ module task_14 #(
             dm_we   = i_valid && load_byte_cnt[10];
         end else if (state == ST_EXEC && opcode == 5'b01001) begin // STRM
             dm_addr = addr_imm10;
-            dm_din  = rx_val;
+            dm_din  = rx_sel ? r1 : r0;
             dm_we   = 1'b1;
         end else if (state == ST_DUMP || state == ST_DUMP_PREP) begin
             dm_addr = dump_addr;
@@ -84,7 +79,7 @@ module task_14 #(
         end
     end
 
-    // Instancia / Inferencia síncrona de Data BRAM (evita driver múltiple)
+    // Instancia / Inferencia síncrona de Data BRAM
     always_ff @(posedge i_clk) begin
         if (dm_we) begin
             data_mem[dm_addr] <= dm_din;
@@ -132,7 +127,7 @@ module task_14 #(
                     end
                 end
 
-                // Estado de Lectura de Instrucción (Respeta el ciclo de latencia de BRAM)
+                // Estado de Lectura de Instrucción
                 ST_FETCH: begin
                     instr <= prog_mem[pc];
                     pc    <= pc + 1'b1;
@@ -141,6 +136,10 @@ module task_14 #(
 
                 ST_EXEC: begin
                     state <= ST_FETCH; // Por defecto pasa a la siguiente instrucción
+
+                    // Variables locales para evaluar rx y ry de forma aislada
+                    automatic logic [7:0] rx = rx_sel ? r1 : r0;
+                    automatic logic [7:0] ry = ry_sel ? r1 : r0;
 
                     case (opcode)
                         5'b00000: begin
@@ -163,7 +162,7 @@ module task_14 #(
                             else        r0 <= dm_dout;
                         end
 
-                        5'b01001: ; // STRM (Manejado en bloque de memoria)
+                        5'b01001: ; // STRM (Manejado en bloque combinacional de memoria)
 
                         5'b01010: begin // LDRI
                             if (rx_sel) r1 <= imm8;
@@ -171,55 +170,55 @@ module task_14 #(
                         end
 
                         5'b01011: begin // ADDR
-                            automatic logic [8:0] sum = rx_val + ry_val + carry;
+                            automatic logic [8:0] sum = rx + ry + carry;
                             carry <= sum[8];
                             if (rx_sel) r1 <= sum[7:0]; else r0 <= sum[7:0];
                         end
 
                         5'b01100: begin // SUBR
-                            automatic logic [8:0] sub = rx_val - ry_val - carry;
+                            automatic logic [8:0] sub = rx - ry - carry;
                             carry <= sub[8];
                             if (rx_sel) r1 <= sub[7:0]; else r0 <= sub[7:0];
                         end
 
                         5'b01101: begin // ROL
-                            carry <= rx_val[7];
-                            if (rx_sel) r1 <= {rx_val[6:0], rx_val[7]};
-                            else        r0 <= {rx_val[6:0], rx_val[7]};
+                            carry <= rx[7];
+                            if (rx_sel) r1 <= {rx[6:0], rx[7]};
+                            else        r0 <= {rx[6:0], rx[7]};
                         end
 
                         5'b01110: begin // ROR
-                            carry <= rx_val[0];
-                            if (rx_sel) r1 <= {rx_val[0], rx_val[7:1]};
-                            else        r0 <= {rx_val[0], rx_val[7:1]};
+                            carry <= rx[0];
+                            if (rx_sel) r1 <= {rx[0], rx[7:1]};
+                            else        r0 <= {rx[0], rx[7:1]};
                         end
 
                         5'b01111: begin // SHR
-                            carry <= rx_val[0];
-                            if (rx_sel) r1 <= {1'b0, rx_val[7:1]};
-                            else        r0 <= {1'b0, rx_val[7:1]};
+                            carry <= rx[0];
+                            if (rx_sel) r1 <= {1'b0, rx[7:1]};
+                            else        r0 <= {1'b0, rx[7:1]};
                         end
 
                         5'b10000: begin // SHL
-                            carry <= rx_val[7];
-                            if (rx_sel) r1 <= {rx_val[6:0], 1'b0};
-                            else        r0 <= {rx_val[6:0], 1'b0}; // Solucionado a 1'b0
+                            carry <= rx[7];
+                            if (rx_sel) r1 <= {rx[6:0], 1'b0};
+                            else        r0 <= {rx[6:0], 1'b0};
                         end
 
                         5'b10001: begin // ASHR
-                            carry <= rx_val[0];
-                            if (rx_sel) r1 <= {rx_val[7], rx_val[7:1]};
-                            else        r0 <= {rx_val[7], rx_val[7:1]};
+                            carry <= rx[0];
+                            if (rx_sel) r1 <= {rx[7], rx[7:1]};
+                            else        r0 <= {rx[7], rx[7:1]};
                         end
 
                         5'b10010: begin // NAND
-                            if (rx_sel) r1 <= ~(rx_val & ry_val);
-                            else        r0 <= ~(rx_val & ry_val);
+                            if (rx_sel) r1 <= ~(rx & ry);
+                            else        r0 <= ~(rx & ry);
                         end
 
-                        5'b10011: begin // XOR
-                            if (rx_sel) r1 <= rx_val ^ ry_val;
-                            else        r0 <= rx_val ^ ry_val;
+                        5 meb10011: begin // XOR
+                            if (rx_sel) r1 <= rx ^ ry;
+                            else        r0 <= rx ^ ry;
                         end
 
                         default: begin // Opcodes no definidos provocan STOP
