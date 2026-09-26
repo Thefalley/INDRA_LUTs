@@ -1,5 +1,4 @@
 `timescale 1ns / 1ps
-
 // ==========================================
 // Módulo CORDIC Vectorial en Q20.12
 // Calcula: angle = atan2(y, x) y radius = sqrt(x^2 + y^2)
