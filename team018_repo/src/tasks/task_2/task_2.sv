@@ -1,104 +1,94 @@
 `timescale 1ns / 1ps
 
-module task_2 (
-    input  wire        i_clk,
-    input  wire        i_rst,
-
-    input  wire        i_valid,
-    input  wire        i_first,
-    input  wire        i_last,
-    input  wire [15:0] i_data [0:1], // i_data[0] = v[n], i_data[1] = t[n]
-
-    output logic       o_valid,
-    output logic       o_last,
-    output logic [31:0] o_data
+module task_2
+#(
+  parameter int TASK_INPUT_WIDTH  = 16,
+  parameter int TASK_OUTPUT_WIDTH = 32
+)(
+  input wire                          i_clk,
+  input wire                          i_rst,
+  input wire                          i_valid,
+  input wire                          i_first,
+  input wire                          i_last,
+  input wire  [TASK_INPUT_WIDTH-1:0]  i_data0,
+  input wire  [TASK_INPUT_WIDTH-1:0]  i_data1,
+  output logic                         o_valid,
+  output logic                         o_last,
+  output logic [TASK_OUTPUT_WIDTH-1:0] o_data
 );
 
-    // Header para el formato Q1.15 especificado en la tabla de la tarea
     localparam logic [31:0] HEADER_Q1_15 = 32'h01007171;
-
-    // Coeficientes de calibración en punto fijo (32 bits Q1.15)
-    // Ajustados para que las operaciones se asignen a DSP48s
-    localparam signed [15:0] CAL_ALPHA = 16'sd32767; // Ganancia/Escala (1.0 en Q1.15)
-    localparam signed [15:0] CAL_BETA  = 16'sd0;     // Coeficiente de compensación de temp
-
-    // Señales internas
-    wire signed [15:0] v_sample = signed'(i_data[0]);
-    wire signed [15:0] t_sample = signed'(i_data[1]);
-
-    // Registros de Pipeline (Mínima latencia: 1 ciclo de reloj)
-    logic        header_active;
-    logic        pipe_valid;
-    logic        pipe_last;
-    logic [31:0] pipe_data;
-
-    // Módulos aritméticos que se mapean a DSP48
-    logic signed [31:0] prod_v;
-    logic signed [31:0] prod_t;
-    logic signed [31:0] m_corrected;
+    logic [15:0] sample_mem [0:2047];
+    logic [11:0] sample_count;
+    logic [11:0] output_count;
+    logic signed [31:0] correction;
+    logic signed [15:0] corrected_sample;
+    typedef enum logic [1:0] { ST_WAIT, ST_CAPTURE, ST_HEADER, ST_OUTPUT } state_t;
+    state_t state, next_state;
 
     always_comb begin
-        prod_v      = v_sample * CAL_ALPHA;
-        prod_t      = t_sample * CAL_BETA;
-        m_corrected = prod_v - prod_t;
+        correction = -32'sd1599 - ($signed(i_data0) <<< 6) - ($signed(i_data0) <<< 4) +
+                     (($signed(i_data1) * 32'sd23) >>> 5);
+        if (correction > 32'sd32767)
+            corrected_sample = 16'sh7fff;
+        else if (correction < -32'sd32768)
+            corrected_sample = 16'sh8000;
+        else
+            corrected_sample = correction[15:0];
     end
 
-    // FSM de control de salida streaming
     always_ff @(posedge i_clk) begin
         if (i_rst) begin
-            header_active <= 1'b0;
-            pipe_valid    <= 1'b0;
-            pipe_last     <= 1'b0;
-            pipe_data     <= '0;
-            o_valid       <= 1'b0;
-            o_last        <= 1'b0;
-            o_data        <= '0;
+            state <= ST_WAIT;
+            sample_count <= '0;
+            output_count <= '0;
         end else begin
-            if (i_valid) begin
-                if (i_first && !header_active) begin
-                    // Emitir HEADER inmediatamente al recibir el primer dato
-                    o_valid       <= 1'b1;
-                    o_data        <= HEADER_Q1_15;
-                    o_last        <= 1'b0;
-                    header_active <= 1'b1;
-
-                    // Almacenar en pipeline la muestra actual para el siguiente ciclo
-                    pipe_valid    <= 1'b1;
-                    pipe_last     <= i_last;
-                    pipe_data     <= m_corrected;
-                end else if (header_active && pipe_valid) begin
-                    // Transmisión en pipeline sostenida
-                    o_valid       <= 1'b1;
-                    o_data        <= pipe_data;
-                    o_last        <= 1'b0;
-
-                    pipe_valid    <= 1'b1;
-                    pipe_last     <= i_last;
-                    pipe_data     <= m_corrected;
-                end else begin
-                    o_valid       <= 1'b1;
-                    o_data        <= m_corrected;
-                    o_last        <= i_last;
-                    pipe_valid    <= 1'b0;
+            state <= next_state;
+            case (state)
+                ST_WAIT: begin
+                    sample_count <= '0;
+                    output_count <= '0;
+                    if (i_valid && i_first) begin
+                        sample_mem[0] <= corrected_sample;
+                        if (!i_last)
+                            sample_count <= 12'd1;
+                    end
                 end
-            end else if (pipe_valid) begin
-                // Vaciar la última muestra que quedó retenida por la inserción del header
-                o_valid    <= 1'b1;
-                o_data     <= pipe_data;
-                o_last     <= pipe_last;
-                pipe_valid <= 1'b0;
-
-                if (pipe_last) begin
-                    header_active <= 1'b0;
+                ST_CAPTURE: if (i_valid) begin
+                    sample_mem[sample_count] <= corrected_sample;
+                    if (i_last)
+                        output_count <= '0;
+                    else
+                        sample_count <= sample_count + 1'b1;
                 end
-            end else begin
-                o_valid <= 1'b0;
-                o_last  <= 1 meb0; // Resetea flags de salida
-                if (i_last) begin
-                    header_active <= 1'b0;
-                end
-            end
+                ST_OUTPUT: if (output_count != sample_count)
+                    output_count <= output_count + 1'b1;
+                default: begin end
+            endcase
         end
+    end
+
+    always_comb begin
+        next_state = state;
+        o_valid = 1'b0;
+        o_last = 1'b0;
+        o_data = '0;
+        case (state)
+            ST_WAIT: if (i_valid && i_first) next_state = i_last ? ST_HEADER : ST_CAPTURE;
+            ST_CAPTURE: if (i_valid && i_last) next_state = ST_HEADER;
+            ST_HEADER: begin
+                o_valid = 1'b1;
+                o_data = HEADER_Q1_15;
+                next_state = ST_OUTPUT;
+            end
+            ST_OUTPUT: begin
+                o_valid = 1'b1;
+                o_data = {{16{sample_mem[output_count][15]}}, sample_mem[output_count]};
+                o_last = (output_count == sample_count);
+                if (o_last) next_state = ST_WAIT;
+            end
+            default: next_state = ST_WAIT;
+        endcase
     end
 
 endmodule
