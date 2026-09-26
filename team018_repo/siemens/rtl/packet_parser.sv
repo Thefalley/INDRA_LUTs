@@ -48,10 +48,10 @@ module packet_parser #(
     // State machine
     // -------------------------------------------------------------------------
     typedef enum logic [1:0] {
-        st_header   = 2'd0,
-        ST_COEFFS   = 2'd1,
-        ST_SAMPLES  = 2'd2,
-        ST_IDLE     = 2'd3
+        st_header  = 2'd0,
+        ST_COEFFS  = 2'd1,
+        ST_SAMPLES = 2'd2,
+        ST_IDLE    = 2'd3
     } state_t;
 
     state_t state, state_next;
@@ -62,9 +62,9 @@ module packet_parser #(
     logic [6:0] r_num_samp;
 
     // Counters
-    logic [7:0] coeff_cnt;   // counts received coefficient words
-    logic [7:0] sample_cnt;  // counts received sample words
-    logic [7:0] total_coeffs; // N x T
+    logic [7:0] coeff_cnt;    // counts received coefficient words
+    logic [7:0] sample_cnt;   // counts received sample words
+    logic [7:0] total_coeffs;  // N x T
     logic [8:0] total_samples; // N x S , max = 4 x 64 = 256
 
     // Per-channel coefficient addressing (avoids sequential-vs-strided mismatch)
@@ -80,47 +80,79 @@ module packet_parser #(
     // =========================================================================
     // TODO 1: Main sequential logic — FSM state transitions + header/counter logic
     // =========================================================================
-    //
-    // Implement an always_ff block (posedge clk or negedge rst_n) that:
-    //
-    //   RESET (rst_n == 0):
-    //     - Set state to st_header
-    //     - Clear all registered header fields (r_num_ch, r_num_taps, r_num_samp)
-    //     - Clear all counters (coeff_cnt, sample_cnt, total_coeffs, total_samples)
-    //     - Clear coefficient addressing (coeff_ch_idx, coeff_tap_idx)
-    //     - Deassert hdr_valid and pkt_done
-    //
-    //   NORMAL OPERATION:
-    //     - Default hdr_valid and pkt_done to 0 each cycle (pulse behavior)
-    //     - Implement a case statement on 'state' with three states:
-    //
-    //       st_header:
-    //         When s_valid, extract header fields from s_data:
-    //           s_data[31:24] → r_num_ch    (number of channels, N)
-    //           s_data[23:16] → r_num_taps  (number of taps, T)
-    //           s_data[15:0]  → r_num_samp  (number of samples, S)
-    //         Compute total_coeffs = N * T, total_samples = N * S
-    //         Clear coeff_cnt, sample_cnt, coeff_ch_idx, coeff_tap_idx
-    //         Pulse hdr_valid for one cycle
-    //         Transition to ST_COEFFS
-    //
-    //       ST_COEFFS:
-    //         When s_valid, increment coeff_cnt
-    //         Track per-channel tap index for BRAM addressing:
-    //           If coeff_tap_idx == r_num_taps - 1: reset tap index, advance channel
-    //           Else: increment coeff_tap_idx
-    //         When coeff_cnt reaches total_coeffs - 1: transition to ST_SAMPLES
-    //
-    //       ST_SAMPLES:
-    //         When s_valid, increment sample_cnt
-    //         When sample_cnt reaches total_samples - 1:
-    //           Pulse pkt_done for one cycle
-    //           Transition back to st_header
-    //
-    //       default: go to st_header
-    //
-    // =========================================================================
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state         <= st_header;
+            r_num_ch      <= '0;
+            r_num_taps    <= '0;
+            r_num_samp    <= '0;
+            coeff_cnt     <= '0;
+            sample_cnt    <= '0;
+            total_coeffs  <= '0;
+            total_samples <= '0;
+            coeff_ch_idx  <= '0;
+            coeff_tap_idx <= '0;
+            hdr_valid     <= 1'b0;
+            pkt_done      <= 1'b0;
+        end else begin
+            // Pulso de salida de 1 ciclo por defecto
+            hdr_valid <= 1'b0;
+            pkt_done  <= 1'b0;
 
+            case (state)
+                st_header: begin
+                    if (s_valid) begin
+                        r_num_ch      <= s_data[27:24];
+                        r_num_taps    <= s_data[20:16];
+                        r_num_samp    <= s_data[6:0];
+
+                        total_coeffs  <= s_data[27:24] * s_data[20:16];
+                        total_samples <= s_data[27:24] * s_data[6:0];
+
+                        coeff_cnt     <= '0;
+                        sample_cnt    <= '0;
+                        coeff_ch_idx  <= '0;
+                        coeff_tap_idx <= '0;
+
+                        hdr_valid     <= 1'b1;
+                        state         <= ST_COEFFS;
+                    end
+                end
+
+                ST_COEFFS: begin
+                    if (s_valid) begin
+                        coeff_cnt <= coeff_cnt + 1'b1;
+
+                        if (coeff_tap_idx == (r_num_taps - 1'b1)) begin
+                            coeff_tap_idx <= '0;
+                            coeff_ch_idx  <= coeff_ch_idx + 1'b1;
+                        end else begin
+                            coeff_tap_idx <= coeff_tap_idx + 1'b1;
+                        end
+
+                        if (coeff_cnt == (total_coeffs - 1'b1)) begin
+                            state <= ST_SAMPLES;
+                        end
+                    end
+                end
+
+                ST_SAMPLES: begin
+                    if (s_valid) begin
+                        sample_cnt <= sample_cnt + 1'b1;
+
+                        if (sample_cnt == (total_samples - 1'b1)) begin
+                            pkt_done <= 1'b1;
+                            state    <= st_header;
+                        end
+                    end
+                end
+
+                default: begin
+                    state <= st_header;
+                end
+            endcase
+        end
+    end
 
     // -------------------------------------------------------------------------
     // Output registered header fields
@@ -156,23 +188,24 @@ module packet_parser #(
     // =========================================================================
     // TODO 2: Sample channel tracking — per-channel sample counter
     // =========================================================================
-    //
-    // Implement an always_ff block (posedge clk or negedge rst_n) that:
-    //
-    //   RESET (rst_n == 0):
-    //     - Clear ch_idx and samp_in_ch to 0
-    //
-    //   NORMAL OPERATION:
-    //     - When in st_header state AND s_valid:
-    //         Reset ch_idx and samp_in_ch to 0 (new packet starting)
-    //     - When in ST_SAMPLES state AND s_valid:
-    //         If samp_in_ch reaches r_num_samp - 1:
-    //           Reset samp_in_ch to 0 and advance ch_idx (next channel)
-    //         Else:
-    //           Increment samp_in_ch
-    //
-    // =========================================================================
-
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            ch_idx     <= '0;
+            samp_in_ch <= '0;
+        end else begin
+            if (state == st_header && s_valid) begin
+                ch_idx     <= '0;
+                samp_in_ch <= '0;
+            end else if (state == ST_SAMPLES && s_valid) begin
+                if (samp_in_ch == (r_num_samp - 1'b1)) begin
+                    samp_in_ch <= '0;
+                    ch_idx     <= ch_idx + 1'b1;
+                end else begin
+                    samp_in_ch <= samp_in_ch + 1'b1;
+                end
+            end
+        end
+    end
 
     assign sample_data  = s_data[15:0];
     assign sample_ch    = ch_idx;
