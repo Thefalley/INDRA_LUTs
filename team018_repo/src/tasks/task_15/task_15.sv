@@ -1,17 +1,21 @@
 `timescale 1ns / 1ps
 
-module task_15 (
-    input  wire       i_clk,
-    input  wire       i_rst,
+module task_15
+#(
+    parameter int TASK_INPUT_WIDTH  = 8,
+    parameter int TASK_OUTPUT_WIDTH = 8
+)(
+    input  wire                          i_clk,
+    input  wire                          i_rst,
 
     input  wire       i_valid,
     input  wire       i_first,
     input  wire       i_last,
-    input  wire [7:0] i_data,
+    input  wire [TASK_INPUT_WIDTH-1:0] i_data,
 
     output logic      o_valid,
     output logic      o_last,
-    output logic [7:0] o_data
+    output logic [TASK_OUTPUT_WIDTH-1:0] o_data
 );
 
     // Estados de la máquina de control (FSM)
