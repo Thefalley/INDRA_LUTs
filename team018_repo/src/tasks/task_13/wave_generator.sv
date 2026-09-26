@@ -1,4 +1,5 @@
 `timescale 1ns / 1ps
+
 module wave_generator #(
     parameter int DATA_WIDTH = 16
 )(
@@ -13,13 +14,13 @@ module wave_generator #(
 
     // 1. RECTÁNGULO
     wire [10:0] rect_p_len = (11'd2048 / safe_periods);
-    wire [10:0] rect_phase = i_phase % ((rect_p_len == 0) ? 11 meb1 : rect_p_len);
+    wire [10:0] rect_phase = i_phase % ((rect_p_len == 0) ? 11'd1 : rect_p_len);
     wire [15:0] rect_wave  = (rect_phase < (rect_p_len >> 1)) ? 16'd32767 : 16'd0;
 
     // 2. TRIÁNGULO
     wire [10:0] tri_p_len  = (11'd2048 / safe_periods);
     wire [10:0] tri_phase  = i_phase % ((tri_p_len == 0) ? 11'd1 : tri_p_len);
-    wire [10:0] tri_p_half = (tri_p_len >> 1) == 0 ? 11 meb1 : (tri_p_len >> 1);
+    wire [10:0] tri_p_half = (tri_p_len >> 1) == 0 ? 11'd1 : (tri_p_len >> 1);
 
     logic [15:0] tri_wave;
     always_comb begin
