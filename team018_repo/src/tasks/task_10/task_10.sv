@@ -1,78 +1,7 @@
 `timescale 1ns / 1ps
 // =============================================================================
 // task_10  --  Memory-Mapped Device Controller
-//
-// -----------------------------------------------------------------------------
-// Architecture:
-//
-//   task_10 (top)
-//     +-- task10_regfile      u_rf_a    (addr 0x0..0x3)
-//     +-- task10_regfile      u_rf_b    (addr 0x4..0x7)
-//     +-- task10_shift_reg_in u_serin   (addr 0x8)
-//     +-- task10_latch_reg    u_serout  (addr 0x9)
-//     +-- task10_timer        u_timer   (addr 0xA + 0xB)
-//
-// The top module owns:
-//   * a Mealy FSM (S_CMD / S_WDATA) that decodes the input stream and
-//     fires a 1-cycle write strobe at the right sub-module,
-//   * a combinational read-bus mux (`bus_read`),
-//   * a `hidden_addr` capture register driven by the timer's `fire` pulse,
-//   * the registered o_data / o_valid / o_last output.
-//
-// Why a Mealy FSM (combinational strobes)?  In the WRITE flow the data
-// word arrives the cycle AFTER the WRITE-command sample.  A registered
-// (Moore) strobe would arrive one cycle late and the regfile would latch
-// the wrong i_data.  Driving the strobe combinationally from
-// (state == S_WDATA && i_valid) makes the regfile capture the correct
-// sample on that same posedge.
-//
-// -----------------------------------------------------------------------------
-// Sample / opcode layout (16 bits)
-//
-//   [15:14] = opcode  { NOP=00, WRITE=01, READ=10, OUTPUT=11 }
-//   [13:10] = reserved
-//   [9:6]   = address  (peripheral select, 0x0..0xC)
-//   [5:0]   = reserved
-//
-//   For OP_WRITE the IMMEDIATELY-FOLLOWING sample is the 16-bit data.
-//
-// Peripheral memory map
-//
-//   0x0..0x3  Register File Bank A     (R/W)
-//   0x4..0x7  Register File Bank B     (R/W)
-//   0x8       Serial-In  shift reg     (W shifts wdata[0] into LSB)
-//   0x9       Serial-Out latch         (W parallel-load, R parallel-read)
-//   0xA       Timer count              (W loads value AND enables the timer)
-//   0xB       Timer target             (W sets fire value)
-//   0xC       Control / Status         (R-only)
-//             [15:8] reserved, [7:4] hidden_addr[3:0],
-//             [3] serin_done, [2] secret_rdy, [1] tmr_match, [0] tmr_en
-//
-// Timer behaviour
-//   * OFF after reset.
-//   * Writing 0xA loads `count_in` and asserts `en`.
-//   * Counts every cycle; on count == target the timer:
-//       - stops, sets sticky `match_latch`,
-//       - asserts a 1-cycle `fire` pulse.
-//   * The top latches serin_par into hidden_addr on `fire` and sets
-//     secret_rdy.  The judge then issues OP_OUTPUT with the same addr.
-//
-// -----------------------------------------------------------------------------
-// What you must implement (search for *** TODO ***):
-//
-//   Sub-modules (active branches inside their always_ff blocks):
-//     TODO A : task10_regfile      -- synchronous write
-//     TODO B : task10_shift_reg_in -- 1-cycle shift + sticky done flag
-//     TODO C : task10_latch_reg    -- parallel load
-//     TODO D : task10_timer        -- load / count / fire / sticky match
-//
-//   Top module:
-//     TODO E : bus_read mux
-//     TODO F : Mealy FSM strobes inside S_CMD  (decode cmd_op)
-//     TODO G : Mealy FSM strobes inside S_WDATA (decode pending_addr)
-//
 // =============================================================================
-
 
 // -----------------------------------------------------------------------------
 // task10_regfile : generic N x WIDTH register file, sync write, comb read.
@@ -81,13 +10,13 @@ module task10_regfile #(
     parameter int N     = 4,
     parameter int WIDTH = 16
 )(
-    input  logic                     clk,
-    input  logic                     rst,
-    input  logic                     we,
-    input  logic [$clog2(N)-1:0]     waddr,
-    input  logic [WIDTH-1:0]         wdata,
-    input  logic [$clog2(N)-1:0]     raddr,
-    output logic [WIDTH-1:0]         rdata
+    input  logic                 clk,
+    input  logic                 rst,
+    input  logic                 we,
+    input  logic [$clog2(N)-1:0] waddr,
+    input  logic [WIDTH-1:0]     wdata,
+    input  logic [$clog2(N)-1:0] raddr,
+    output logic [WIDTH-1:0]     rdata
 );
   logic [WIDTH-1:0] mem [0:N-1];
 
@@ -96,6 +25,9 @@ module task10_regfile #(
       for (int i = 0; i < N; i++) mem[i] <= '0;
     end else begin
       // *** TODO A *** synchronous write
+      if (we) begin
+        mem[waddr] <= wdata;
+      end
     end
   end
 
@@ -121,6 +53,10 @@ module task10_shift_reg_in #(parameter int WIDTH = 16)(
       any_shift_done <= 1'b0;
     end else begin
       // *** TODO B *** 1-cycle shift
+      if (shift_en) begin
+        parallel_out   <= {parallel_out[WIDTH-2:0], serial_bit};
+        any_shift_done <= 1'b1;
+      end
     end
   end
 endmodule
@@ -140,6 +76,9 @@ module task10_latch_reg #(parameter int WIDTH = 16)(
     if (rst)        rdata <= '0;
     else begin
       // *** TODO C *** parallel load
+      if (we) begin
+        rdata <= wdata;
+      end
     end
   end
 endmodule
@@ -147,11 +86,6 @@ endmodule
 
 // -----------------------------------------------------------------------------
 // task10_timer : 16-bit free-running timer.
-//   load        : 1-cycle pulse, captures count_in -> count_out and starts.
-//   set_target  : 1-cycle pulse, captures target_in -> target_out.
-//   en          : '1' while counting.
-//   fire        : 1-cycle pulse on the cycle where count_out == target_out.
-//   match_latch : sticky '1' after fire (cleared by reset only).
 // -----------------------------------------------------------------------------
 module task10_timer #(parameter int WIDTH = 16)(
     input  logic             clk,
@@ -175,14 +109,31 @@ module task10_timer #(parameter int WIDTH = 16)(
       match_latch <= 1'b0;
     end else begin
       // *** TODO D *** timer behaviour
-      
+      fire <= 1'b0; // Default 1-cycle pulse behavior
+
+      if (set_target) begin
+        target_out <= target_in;
+      end
+
+      if (load) begin
+        count_out <= count_in;
+        en        <= 1'b1;
+      end else if (en) begin
+        if (count_out == target_out) begin
+          en          <= 1'b0;
+          fire        <= 1'b1;
+          match_latch <= 1'b1;
+        end else begin
+          count_out <= count_out + 1'b1;
+        end
+      end
     end
   end
 endmodule
 
 
 // =============================================================================
-// task_10 : top wrapper -- the only module the rest of the project knows about
+// task_10 : top wrapper
 // =============================================================================
 module task_10 #(
     parameter int TASK_INPUT_WIDTH  = 16,
@@ -234,7 +185,7 @@ module task_10 #(
   logic [15:0] tmr_count, tmr_target;
   logic        tmr_en, tmr_fire, tmr_match;
 
-  // ---------- hidden-addr capture (triggered by timer fire) -- provided ----
+  // ---------- hidden-addr capture (triggered by timer fire) ----------------
   logic [15:0] hidden_addr;
   logic        secret_rdy;
 
@@ -248,7 +199,7 @@ module task_10 #(
     end
   end
 
-  // ---------- sub-module instances -- provided ----------------------------
+  // ---------- sub-module instances ----------------------------------------
   task10_regfile #(.N(4), .WIDTH(16)) u_rf_a (
       .clk   (i_clk),
       .rst   (i_rst),
@@ -302,27 +253,24 @@ module task_10 #(
 
   // ---------- combinational read mux --------------------------------------
   // *** TODO E ***
-  // Implement the address-decoded read mux per the memory-map table above.
-  //   * 0x0..0x3 -> rfa_rdata
-  //   * 0x4..0x7 -> rfb_rdata
-  //   * 0x8      -> serin_par
-  //   * 0x9      -> serout_par
-  //   * 0xA      -> tmr_count
-  //   * 0xB      -> tmr_target
-  //   * 0xC      -> {8'h0, hidden_addr[3:0],
-  //                  serin_done, secret_rdy, tmr_match, tmr_en}
-  //   * otherwise -> 0
-  // ------------------------------------------------------------------------
   function automatic logic [15:0] bus_read(input logic [3:0] a);
     logic [15:0] v;
-    v = 16'h0;
-    // TODO: address-decoded mux
+    case (a)
+      4'h0, 4'h1, 4'h2, 4'h3: v = rfa_rdata;
+      4'h4, 4'h5, 4'h6, 4'h7: v = rfb_rdata;
+      4'h8:                  v = serin_par;
+      4'h9:                  v = serout_par;
+      4'hA:                  v = tmr_count;
+      4'hB:                  v = tmr_target;
+      4'hC:                  v = {8'h0, hidden_addr[3:0], serin_done, secret_rdy, tmr_match, tmr_en};
+      default:               v = 16'h0;
+    endcase
     return v;
   endfunction
 
   // ---------- Mealy FSM : combinational next-state + write strobes --------
   always_comb begin
-    // defaults: hold state, all strobes low, output deasserted
+    // Default assignments
     state_n          = state;
     pending_addr_n   = pending_addr;
     rfa_we           = 1'b0;
@@ -332,30 +280,49 @@ module task_10 #(
     timer_load       = 1'b0;
     timer_set_target = 1'b0;
 
-    // ---- DUMMY PASSTHROUGH -------------------------------
-    // Remove these three lines and set explicit defaults (o_valid_n=0,
-    // o_last_n=0, o_data_n=o_data) once you start TODO F/G.
-    o_valid_n        = i_valid;  // DUMMY: replace when implementing TODO F/G
-    o_last_n         = i_last;   // DUMMY: replace when implementing TODO F/G
-    o_data_n         = i_data;   // DUMMY: replace when implementing TODO F/G
+    o_valid_n        = 1'b0;
+    o_last_n         = 1'b0;
+    o_data_n         = o_data;
 
     unique case (state)
       S_CMD: begin
         if (i_valid) begin
-          // *** TODO F *** decode cmd_op
+          case (cmd_op)
+            OP_WRITE: begin
+              pending_addr_n = cmd_addr;
+              state_n        = S_WDATA;
+            end
+            OP_READ: begin
+              // Read does not emit output, internal register operation
+            end
+            OP_OUTPUT: begin
+              o_valid_n = 1'b1;
+              o_last_n  = i_last;
+              o_data_n  = bus_read(cmd_addr);
+            end
+            default: ; // OP_NOP
+          endcase
         end
       end
 
       S_WDATA: begin
         if (i_valid) begin
-          // *** TODO G *** decode pending_addr and pulse the matching strobe
+          case (pending_addr)
+            4'h0, 4'h1, 4'h2, 4'h3: rfa_we           = 1'b1;
+            4'h4, 4'h5, 4'h6, 4'h7: rfb_we           = 1'b1;
+            4'h8:                  serin_shift      = 1'b1;
+            4'h9:                  serout_we        = 1'b1;
+            4'hA:                  timer_load       = 1'b1;
+            4'hB:                  timer_set_target = 1'b1;
+            default: ;
+          endcase
           state_n = S_CMD;
         end
       end
     endcase
   end
 
-  // ---------- state / output registers -- provided ------------------------
+  // ---------- state / output registers ------------------------------------
   always_ff @(posedge i_clk) begin
     if (i_rst) begin
       state        <= S_CMD;
