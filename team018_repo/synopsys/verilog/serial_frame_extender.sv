@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 // File: serial_frame_extender.sv
 // Purpose: receive a continuous 8 Mbit/s serial input stream,
 //          identifies the bit position of a single '1' bit within each frame,
@@ -20,70 +22,112 @@ module serial_frame_extender #(
   output logic out_clk,    // derived clock, free-running
   output logic out_data    // changes on falling edge of out_clk; sample on rising
 );
-   logic in_clk_d;
-   logic [7:0] in_count;
-   logic [6:0] payload_position;
-   logic [127:0] input_frame;
-   logic [135:0] output_frame;
-   logic [7:0] out_count;
-   logic output_busy;
-   logic [7:0] out_phase;
-   logic out_clk_r;
 
-   assign out_clk = out_clk_r;
+   // The externally visible port map above is deliberately kept unchanged.
+   // FRAME_START_MSB_FIRST is sent left-to-right on the serial line.
+   localparam logic [7:0] FRAME_START = FRAME_START_MSB_FIRST[7:0];
 
-   always_ff @(posedge clk64 or negedge rst_n) begin
+   // Two 136-bit banks hold completed output frames.  One bank is filled
+   // from in_clk while the other one is serialized from clk64.
+   logic [135:0] frame_mem [0:1];
+   logic         write_toggle;
+
+   logic [7:0]   header_shift;
+   logic [127:0] rx_frame;
+   logic [7:0]   detected_index;
+   logic [6:0]   payload_index;
+   logic         collecting;
+
+   // Detect the frame start even if reset is released in the middle of a
+   // frame, then collect the following 120 one-hot payload bits.
+   always_ff @(posedge in_clk or negedge rst_n) begin
       if (!rst_n) begin
-         in_clk_d <= 1'b0;
-         in_count <= '0;
-         payload_position <= '0;
-         input_frame <= '0;
+         header_shift   <= 8'd0;
+         rx_frame       <= 128'd0;
+         detected_index <= 8'd0;
+         payload_index  <= 7'd0;
+         collecting     <= 1'b0;
+         write_toggle   <= 1'b0;
+      end else if (!collecting) begin
+         header_shift <= {header_shift[6:0], in_data};
+         if ({header_shift[6:0], in_data} == FRAME_START) begin
+            // Subsequent payload shifts move the start word to [127:120].
+            rx_frame       <= {{120{1'b0}}, FRAME_START};
+            detected_index <= 8'd0;
+            payload_index  <= 7'd0;
+            collecting     <= 1'b1;
+         end
       end else begin
-         in_clk_d <= in_clk;
-         if (in_clk && !in_clk_d) begin
-            input_frame <= {input_frame[126:0], in_data};
-            if (in_count >= 8 && in_data)
-              payload_position <= in_count - 8;
-            if (in_count == 8'd127) begin
-               in_count <= '0;
-            end else begin
-               in_count <= in_count + 1'b1;
-            end
+         rx_frame <= {rx_frame[126:0], in_data};
+         if (in_data)
+            detected_index <= {1'b0, payload_index};
+
+         if (payload_index == 7'd119) begin
+            // Append the current (last) payload bit and the inverted index.
+            frame_mem[write_toggle] <= {
+               {rx_frame[126:0], in_data},
+               ~(in_data ? {1'b0, payload_index} : detected_index)
+            };
+            write_toggle <= ~write_toggle;
+            collecting   <= 1'b0;
+         end else begin
+            payload_index <= payload_index + 1'b1;
          end
       end
    end
 
+   // A 7-bit fractional-N accumulator generates exactly 8.5 MHz on average:
+   // 64 MHz * 17 / 128.  Its high and low phases are 3 or 4 clk64 cycles,
+   // satisfying the requested output duty-cycle tolerance.
+   logic [6:0] nco_phase;
+   wire  [6:0] nco_next        = nco_phase + 7'd17;
+   wire        out_clk_falling = nco_phase[6] && !nco_next[6];
+
+   logic wr_sync_1, wr_sync_2;
+   logic tx_active;
+   logic tx_seen;
+   logic tx_bank;
+   logic [7:0] tx_bit_index;
+
+   assign out_clk = nco_phase[6];
+
+   // Keep serialization in the clk64 domain.  out_data is modified only
+   // while out_clk falls, so it remains stable through its rising edge.
    always_ff @(posedge clk64 or negedge rst_n) begin
       if (!rst_n) begin
-         out_phase <= '0;
-         out_clk_r <= 1'b0;
-         output_frame <= '0;
-         out_count <= '0;
-         output_busy <= 1'b0;
-         out_data <= 1'b0;
+         nco_phase    <= 7'd0;
+         wr_sync_1    <= 1'b0;
+         wr_sync_2    <= 1'b0;
+         tx_active    <= 1'b0;
+         tx_seen      <= 1'b0;
+         tx_bank      <= 1'b0;
+         tx_bit_index <= 8'd0;
+         out_data     <= 1'b0;
       end else begin
-         if ({1'b0, out_phase} + 9'd68 >= 9'd256) begin
-            out_phase <= out_phase + 8'd68;
-            out_clk_r <= ~out_clk_r;
-            if (out_clk_r) begin
-               if (output_busy) begin
-                  out_data <= output_frame[135 - out_count];
-                  if (out_count == 8'd135) begin
-                     out_count <= '0;
-                     output_busy <= 1'b0;
-                  end else begin
-                     out_count <= out_count + 1'b1;
-                  end
-               end
-            end
-         end else begin
-            out_phase <= out_phase + 8'd68;
-         end
+         nco_phase <= nco_next;
+         wr_sync_1 <= write_toggle;
+         wr_sync_2 <= wr_sync_1;
 
-         if (in_clk && !in_clk_d && in_count == 8'd127 && !output_busy) begin
-            output_frame <= {{input_frame[126:0], in_data}, ~(in_data ? 7'd119 : payload_position)};
-            output_busy <= 1'b1;
-            out_count <= '0;
+         if (out_clk_falling) begin
+            if (!tx_active) begin
+               if (wr_sync_2 != tx_seen) begin
+                  // write_toggle identifies the *next* write bank; select
+                  // the opposite bank, which contains the completed frame.
+                  tx_active    <= 1'b1;
+                  tx_seen      <= wr_sync_2;
+                  tx_bank      <= ~wr_sync_2;
+                  tx_bit_index <= 8'd1;
+                  out_data     <= frame_mem[~wr_sync_2][135];
+               end else begin
+                  out_data <= 1'b0;
+               end
+            end else begin
+               out_data <= frame_mem[tx_bank][135 - tx_bit_index];
+               if (tx_bit_index == 8'd135)
+                  tx_active <= 1'b0;
+               else
+                  tx_bit_index <= tx_bit_index + 1'b1;
+            end
          end
       end
    end
