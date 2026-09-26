@@ -1,175 +1,193 @@
 `timescale 1ns / 1ps
-
 module task_11 #(
-    parameter int TASK_INPUT_WIDTH  = 8,
+    parameter int TASK_INPUT_WIDTH = 8,
     parameter int TASK_OUTPUT_WIDTH = 8
 )(
-    input wire                          i_clk,
-    input wire                          i_rst,
-
-    input wire                          i_valid,
-    input wire                          i_first,
-    input wire                          i_last,
-    input wire  [TASK_INPUT_WIDTH-1:0]  i_data,
-
-    output logic                        o_valid,
-    output logic                        o_last,
+    input wire i_clk, i_rst,
+    input wire i_valid, i_first, i_last,
+    input wire [TASK_INPUT_WIDTH-1:0] i_data,
+    output logic o_valid, o_last,
     output logic [TASK_OUTPUT_WIDTH-1:0] o_data
 );
-
-    // Local Constants & Types
-    localparam [7:0] MISSING_VAL = 8'hFF; // 255 represents missing cell
-
-    typedef enum logic [2:0] {
-        ST_IDLE,
-        ST_RX,
-        ST_SOLVE,
-        ST_TX
+    localparam logic [7:0] MISSING = 8'hff;
+    typedef enum logic [3:0] {
+        IDLE, RX, SIZE, CLEAR, READ_ADDR, READ_WAIT, READ_DATA,
+        TARGET, SOLVE, TX_ADDR, TX_WAIT, TX_DATA
     } state_t;
-
     state_t state;
+    (* ram_style = "block" *) logic [7:0] mem [0:4095];
+    logic [11:0] rd_addr;
+    logic [7:0] rd_data;
+    logic [12:0] total_count;
+    logic [6:0] grid_size, size_candidate, clear_index, line_index;
+    logic [11:0] scan_addr, tx_ptr;
+    logic [5:0] scan_row, scan_col;
+    logic [14:0] row_sum [0:63], col_sum [0:63];
+    logic [6:0] row_missing [0:63], col_missing [0:63];
+    // XOR of missing positions identifies the cell once just one remains.
+    logic [5:0] row_xor [0:63], col_xor [0:63];
+    logic [14:0] target_sum;
+    logic target_valid, column_pass, progress_made;
+    logic [5:0] repair_row, repair_col;
+    logic [11:0] repair_addr;
+    logic [14:0] repair_value;
+    logic repair_valid;
 
-    // BRAM Memory Architecture (4096 bytes -> BRAM inference saves thousands of LUTs)
-    logic [7:0]  mem [0:4095];
-    logic [11:0] mem_waddr, mem_raddr;
-    logic [7:0]  mem_wdata, mem_rdata;
-    logic        mem_we;
-
-    // Infer Single-Port Block RAM
-    always_ff @(posedge i_clk) begin
-        if (mem_we) begin
-            mem[mem_waddr] <= mem_wdata;
-        end
-        mem_rdata <= mem[mem_raddr];
+    always_comb begin
+        repair_row = column_pass ? col_xor[line_index[5:0]] : line_index[5:0];
+        repair_col = column_pass ? line_index[5:0] : row_xor[line_index[5:0]];
+        repair_addr = repair_row * grid_size + repair_col;
+        repair_value = target_sum - (column_pass ? col_sum[line_index[5:0]] : row_sum[line_index[5:0]]);
+        repair_valid = state == SOLVE && target_valid &&
+            (column_pass ? col_missing[line_index[5:0]] == 1 : row_missing[line_index[5:0]] == 1) &&
+            target_sum >= (column_pass ? col_sum[line_index[5:0]] : row_sum[line_index[5:0]]) &&
+            repair_value < 255;
     end
 
-    // Tracking Counters & Grid Metadata
-    logic [11:0] total_count;
-    logic [5:0]  grid_size;      // N (up to 64x64)
-    logic [11:0] tx_ptr;
-    logic [31:0] target_sum;
-    logic        target_sum_valid;
-
-    // Solver iteration logic
-    logic [5:0]  r_idx, c_idx;
-    logic [31:0] current_row_sum, current_col_sum;
-    logic [5:0]  row_missing_cnt, col_missing_cnt;
-    logic [5:0]  row_missing_pos, col_missing_pos;
-    logic        progress_made;
-    logic [1:0]  solve_substate;
+    // One synchronous read port and one synchronous write port.
+    always_ff @(posedge i_clk) begin
+        rd_data <= mem[rd_addr];
+        if (!i_rst) begin
+            if (state == IDLE && i_valid && i_first)
+                mem[0] <= i_data[7:0];
+            else if (state == RX && i_valid)
+                mem[total_count[11:0]] <= i_data[7:0];
+            else if (repair_valid)
+                mem[repair_addr] <= repair_value[7:0];
+        end
+    end
 
     always_ff @(posedge i_clk) begin
         if (i_rst) begin
-            state            <= ST_IDLE;
-            total_count      <= '0;
-            grid_size        <= '0;
-            tx_ptr           <= '0;
-            mem_we           <= 1'b0;
-            o_valid          <= 1'b0;
-            o_last           <= 1'b0;
-            o_data           <= '0;
-            target_sum_valid <= 1'b0;
-            target_sum       <= '0;
-            solve_substate   <= '0;
-            r_idx            <= '0;
-            c_idx            <= '0;
+            state <= IDLE;
+            total_count <= 0;
+            grid_size <= 0;
+            size_candidate <= 1;
+            rd_addr <= 0;
+            scan_addr <= 0;
+            scan_row <= 0;
+            scan_col <= 0;
+            tx_ptr <= 0;
+            clear_index <= 0;
+            line_index <= 0;
+            target_sum <= 0;
+            target_valid <= 0;
+            column_pass <= 0;
+            progress_made <= 0;
+            o_valid <= 0;
+            o_last <= 0;
+            o_data <= 0;
         end else begin
-            mem_we  <= 1'b0;
-            o_valid <= 1'b0; // Reset validity by default unless driven in TX state
-
+            o_valid <= 0;
+            o_last <= 0;
             case (state)
-
-                // Wait for incoming packet
-                ST_IDLE: begin
-                    o_valid          <= 1'b0;
-                    o_last           <= 1'b0;
-                    total_count      <= '0;
-                    target_sum_valid <= 1'b0;
-                    target_sum       <= '0;
-
-                    if (i_valid && i_first) begin
-                        mem_waddr   <= '0;
-                        mem_wdata   <= i_data;
-                        mem_we      <= 1'b1;
-                        total_count <= 1;
-                        state       <= ST_RX;
-                    end
+                IDLE: if (i_valid && i_first) begin
+                    total_count <= 1;
+                    target_valid <= 0;
+                    size_candidate <= 1;
+                    tx_ptr <= 0;
+                    state <= i_last ? SIZE : RX;
                 end
-
-                // Stream input cells directly into BRAM
-                ST_RX: begin
-                    if (i_valid) begin
-                        mem_waddr   <= total_count;
-                        mem_wdata   <= i_data;
-                        mem_we      <= 1'b1;
-                        total_count <= total_count + 1'b1;
-
-                        if (i_last) begin
-                            // Determine N (Square root approximation / size evaluation)
-                            // Total element count = N * N
-                            grid_size <= (total_count == 12)   ? 6'd3  : 
-                                         (total_count == 16)   ? 6'd4  :
-                                         (total_count == 36)   ? 6'd6  :
-                                         (total_count == 81)   ? 6'd9  :
-                                         (total_count == 64)   ? 6'd8  :
-                                         (total_count == 4096) ? 6'd64 : 6'd6; // Dynamic matrix sizing
-
-                            r_idx          <= '0;
-                            c_idx          <= '0;
-                            solve_substate <= '0;
-                            progress_made  <= 1'b0;
-                            state          <= ST_SOLVE;
-                        end
-                    end
+                RX: if (i_valid) begin
+                    total_count <= total_count + 1'b1;
+                    if (i_last) state <= SIZE;
                 end
-
-                // Grid Solver & Constraint Satisfaction Pass
-                ST_SOLVE: begin
-                    case (solve_substate)
-                        2'd0: begin
-                            // Scan row by row to detect row sum and restore single missing fields
-                            mem_raddr      <= (r_idx * grid_size) + c_idx;
-                            solve_substate <= 2'd1;
-                        end
-
-                        2'd1: begin
-                            // Accumulate row calculations and solve missing items
-                            if (c_idx < grid_size - 1'b1) begin
-                                c_idx     <= c_idx + 1'b1;
-                                mem_raddr <= (r_idx * grid_size) + (c_idx + 1'b1);
-                            end else begin
-                                c_idx <= '0;
-                                if (r_idx < grid_size - 1'b1) begin
-                                    r_idx     <= r_idx + 1'b1;
-                                    mem_raddr <= ((r_idx + 1'b1) * grid_size);
-                                end else begin
-                                    // Finished scan pass, move to transmit output
-                                    tx_ptr    <= '0;
-                                    mem_raddr <= '0;
-                                    state     <= ST_TX;
-                                end
-                            end
-                        end
-                    endcase
+                SIZE: begin
+                    if (size_candidate * size_candidate == total_count) begin
+                        grid_size <= size_candidate;
+                        clear_index <= 0;
+                        state <= CLEAR;
+                    end else if (size_candidate == 64) begin
+                        // Malformed non-square packet: return it unchanged.
+                        tx_ptr <= 0;
+                        state <= TX_ADDR;
+                    end else size_candidate <= size_candidate + 1'b1;
                 end
-
-                // Stream output cells out of BRAM
-                ST_TX: begin
-                    if (tx_ptr < total_count) begin
-                        o_valid   <= 1'b1;
-                        o_data    <= mem_rdata;
-                        o_last    <= (tx_ptr == total_count - 1'b1);
-                        tx_ptr    <= tx_ptr + 1'b1;
-                        mem_raddr <= tx_ptr + 1'b1;
+                CLEAR: begin
+                    row_sum[clear_index[5:0]] <= 0;
+                    col_sum[clear_index[5:0]] <= 0;
+                    row_missing[clear_index[5:0]] <= 0;
+                    col_missing[clear_index[5:0]] <= 0;
+                    row_xor[clear_index[5:0]] <= 0;
+                    col_xor[clear_index[5:0]] <= 0;
+                    if (clear_index == 63) begin
+                        scan_addr <= 0;
+                        scan_row <= 0;
+                        scan_col <= 0;
+                        state <= READ_ADDR;
+                    end else clear_index <= clear_index + 1'b1;
+                end
+                READ_ADDR: begin rd_addr <= scan_addr; state <= READ_WAIT; end
+                READ_WAIT: state <= READ_DATA;
+                READ_DATA: begin
+                    if (rd_data == MISSING) begin
+                        row_missing[scan_row] <= row_missing[scan_row] + 1'b1;
+                        col_missing[scan_col] <= col_missing[scan_col] + 1'b1;
+                        row_xor[scan_row] <= row_xor[scan_row] ^ scan_col;
+                        col_xor[scan_col] <= col_xor[scan_col] ^ scan_row;
                     end else begin
-                        o_valid <= 1'b0;
-                        o_last  <= 1'b0;
-                        state   <= ST_IDLE;
+                        row_sum[scan_row] <= row_sum[scan_row] + rd_data;
+                        col_sum[scan_col] <= col_sum[scan_col] + rd_data;
+                    end
+                    if ({1'b0,scan_addr} + 13'd1 == total_count) begin
+                        line_index <= 0;
+                        state <= TARGET;
+                    end else begin
+                        scan_addr <= scan_addr + 1'b1;
+                        if ({1'b0,scan_col} + 7'd1 == grid_size) begin
+                            scan_col <= 0;
+                            scan_row <= scan_row + 1'b1;
+                        end else scan_col <= scan_col + 1'b1;
+                        state <= READ_ADDR;
                     end
                 end
-
+                TARGET: begin
+                    if (row_missing[line_index[5:0]] == 0 || col_missing[line_index[5:0]] == 0) begin
+                        target_sum <= row_missing[line_index[5:0]] == 0 ?
+                                      row_sum[line_index[5:0]] : col_sum[line_index[5:0]];
+                        target_valid <= 1;
+                        line_index <= 0;
+                        column_pass <= 0;
+                        progress_made <= 0;
+                        state <= SOLVE;
+                    end else if (line_index + 7'd1 == grid_size) begin
+                        tx_ptr <= 0;
+                        state <= TX_ADDR;
+                    end else line_index <= line_index + 1'b1;
+                end
+                SOLVE: begin
+                    if (repair_valid) begin
+                        row_sum[repair_row] <= row_sum[repair_row] + repair_value;
+                        col_sum[repair_col] <= col_sum[repair_col] + repair_value;
+                        row_missing[repair_row] <= row_missing[repair_row] - 1'b1;
+                        col_missing[repair_col] <= col_missing[repair_col] - 1'b1;
+                        row_xor[repair_row] <= row_xor[repair_row] ^ repair_col;
+                        col_xor[repair_col] <= col_xor[repair_col] ^ repair_row;
+                        progress_made <= 1;
+                    end
+                    if (line_index + 7'd1 == grid_size) begin
+                        line_index <= 0;
+                        if (!column_pass) column_pass <= 1;
+                        else if (progress_made || repair_valid) begin
+                            column_pass <= 0;
+                            progress_made <= 0;
+                        end else begin
+                            tx_ptr <= 0;
+                            state <= TX_ADDR;
+                        end
+                    end else line_index <= line_index + 1'b1;
+                end
+                TX_ADDR: begin rd_addr <= tx_ptr; state <= TX_WAIT; end
+                TX_WAIT: state <= TX_DATA;
+                TX_DATA: begin
+                    o_valid <= 1;
+                    o_data <= rd_data;
+                    o_last <= ({1'b0,tx_ptr} + 13'd1 == total_count);
+                    if ({1'b0,tx_ptr} + 13'd1 == total_count) state <= IDLE;
+                    else begin tx_ptr <= tx_ptr + 1'b1; state <= TX_ADDR; end
+                end
+                default: state <= IDLE;
             endcase
         end
     end
-
 endmodule

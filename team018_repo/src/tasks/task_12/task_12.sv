@@ -28,8 +28,8 @@ module task_12 #(
     logic [6:0] out_ptr;
 
     // PN Stack ajustado
-    logic signed [31:0] stack [0:15];
-    logic [3:0] sp;
+    logic signed [31:0] stack [0:2047];
+    logic [11:0] sp;
 
     // Estados FSM
     typedef enum logic [2:0] {
@@ -44,6 +44,7 @@ module task_12 #(
     state_t state;
 
     logic signed [31:0] op1, op2, res;
+    logic signed [63:0] calc_result;
     logic               eval_error;
     integer             curr_val, next_val;
 
@@ -128,19 +129,19 @@ module task_12 #(
                             end else begin
                                 op1 = stack[sp-1];
                                 op2 = stack[sp-2];
-                                sp  = sp - 1'b1;
+                                sp <= sp - 1'b1;
 
                                 case (in_buffer[idx])
-                                    "+": res = op1 + op2;
-                                    "-": res = op1 - op2;
-                                    "*": res = op1 * op2;
-                                    default: res = 0;
+                                    "+": calc_result = op1 + op2;
+                                    "-": calc_result = op1 - op2;
+                                    "*": calc_result = op1 * op2;
+                                    default: calc_result = 0;
                                 endcase
 
-                                if (res < 1 || res > 32'sd1399999) begin
+                                if (calc_result < 1 || calc_result > 64'sd399999) begin
                                     eval_error <= 1'b1;
                                 end else begin
-                                    stack[sp-1] <= res;
+                                    stack[sp-2] <= calc_result;
                                 end
                             end
                             idx <= idx - 13'sd1;
@@ -173,7 +174,7 @@ module task_12 #(
 
                 ST_FORMAT_INIT: begin
                     out_len <= '0;
-                    if (eval_error) begin
+                    if (eval_error || stack[0] < 1 || stack[0] > 399999) begin
                         out_buffer[0] <= "e";
                         out_buffer[1] <= "r";
                         out_buffer[2] <= "r";
@@ -190,10 +191,15 @@ module task_12 #(
 
                 // Conversión secuencial paso a paso (sin bucles 'while')
                 ST_FORMAT_STEP: begin
-                    if (res >= 100000)      begin out_buffer[out_len] <= "F"; out_len <= out_len + 1'b1; res <= res - 100000; end
-                    else if (res >= 90000)  begin out_buffer[out_len] <= "M"; out_buffer[out_len+1'b1] <= "F"; out_len <= out_len + 2'd2; res <= res - 90000; end
+                    if (out_len >= 126 && res > 0) begin
+                        out_buffer[0] <= "e"; out_buffer[1] <= "r";
+                        out_buffer[2] <= "r"; out_buffer[3] <= "o"; out_buffer[4] <= "r";
+                        out_len <= 5; out_ptr <= 0; state <= ST_TX;
+                    end
+                    else if (res >= 100000)      begin out_buffer[out_len] <= "F"; out_len <= out_len + 1'b1; res <= res - 100000; end
+                    else if (res >= 90000)  begin out_buffer[out_len] <= "G"; out_buffer[out_len+1'b1] <= "F"; out_len <= out_len + 2'd2; res <= res - 90000; end
                     else if (res >= 50000)  begin out_buffer[out_len] <= "P"; out_len <= out_len + 1'b1; res <= res - 50000; end
-                    else if (res >= 40000)  begin out_buffer[out_len] <= "M"; out_buffer[out_len+1'b1] <= "P"; out_len <= out_len + 2'd2; res <= res - 40000; end
+                    else if (res >= 40000)  begin out_buffer[out_len] <= "G"; out_buffer[out_len+1'b1] <= "P"; out_len <= out_len + 2'd2; res <= res - 40000; end
                     else if (res >= 10000)  begin out_buffer[out_len] <= "G"; out_len <= out_len + 1'b1; res <= res - 10000; end
                     else if (res >= 9000)   begin out_buffer[out_len] <= "M"; out_buffer[out_len+1'b1] <= "G"; out_len <= out_len + 2'd2; res <= res - 9000; end
                     else if (res >= 5000)   begin out_buffer[out_len] <= "A"; out_len <= out_len + 1'b1; res <= res - 5000; end
@@ -229,7 +235,7 @@ module task_12 #(
                         state   <= ST_IDLE;
                     end
                 end
-                
+
                 default: state <= ST_IDLE;
             endcase
         end

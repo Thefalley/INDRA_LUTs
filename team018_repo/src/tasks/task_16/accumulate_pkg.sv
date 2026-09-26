@@ -64,6 +64,7 @@ module accumulate_pkg #(
                     4'd1: shift_reg[39:8]  <= i_data;
                     4'd2: shift_reg[47:16] <= i_data;
                     4'd3: shift_reg[55:24] <= i_data;
+                    4'd4: shift_reg[63:32] <= i_data;
                     default: ;
                 endcase
 

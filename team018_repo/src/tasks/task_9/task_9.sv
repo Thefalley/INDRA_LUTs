@@ -22,11 +22,12 @@ module task_9 #(
 
     (* ram_style = "block" *) logic [31:0] sample_mem [0:MAX_INPUT_SAMPLES-1];
 
-    typedef enum logic [2:0] {
+    typedef enum logic [3:0] {
         ST_WAIT_CONFIG,
         ST_RECEIVE,
         ST_CALC_INIT,
         ST_CALC_WAIT,
+        ST_PRODUCT_WAIT,
         ST_CALCULATE,
         ST_NORMALIZE,
         ST_OUTPUT_CONFIG,
@@ -170,9 +171,7 @@ module task_9 #(
                     sum_11          <= '0;
                 end
 
-                ST_CALC_WAIT: begin
-                    row_block_index <= row_block_index + 1'b1;
-                end
+                ST_CALC_WAIT: begin end
 
                 ST_CALCULATE: begin
                     sum_00 <= sum_00 + prod_00_a + prod_00_b;
@@ -195,6 +194,10 @@ module task_9 #(
                 end
 
                 ST_OUTPUT_DATA: begin
+                    sum_00 <= '0;
+                    sum_01 <= '0;
+                    sum_10 <= '0;
+                    sum_11 <= '0;
                     if (out_row_index == col_b_blocks - 1'b1) begin
                         out_row_index <= '0;
                         if (out_col_index == col_a_blocks - 1'b1) begin
@@ -234,11 +237,14 @@ module task_9 #(
 
             ST_CALC_INIT: next_state = ST_CALC_WAIT;
 
-            ST_CALC_WAIT: next_state = ST_CALCULATE;
+            ST_CALC_WAIT: next_state = ST_PRODUCT_WAIT;
+
+            ST_PRODUCT_WAIT: next_state = ST_CALCULATE;
 
             ST_CALCULATE: begin
                 if (row_block_index == row_blocks - 1'b1)
                     next_state = ST_NORMALIZE;
+                else next_state = ST_CALC_WAIT;
             end
 
             ST_NORMALIZE: begin
@@ -262,7 +268,7 @@ module task_9 #(
                           (out_col_index == col_a_blocks - 1'b1) &&
                           (out_row_index == col_b_blocks - 1'b1);
                 
-                next_state = o_last ? ST_WAIT_CONFIG : ST_CALCULATE;
+                next_state = o_last ? ST_WAIT_CONFIG : ST_CALC_WAIT;
             end
 
             default: next_state = ST_WAIT_CONFIG;

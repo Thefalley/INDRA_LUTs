@@ -21,6 +21,11 @@ module task_13 #(
     logic [10:0] phase;
     logic        gen_active;
     logic [11:0] sample_cnt;
+    logic [TASK_OUTPUT_WIDTH-1:0] wave_data;
+    always_ff @(posedge i_clk) begin
+        if (i_rst) o_data <= '0;
+        else if (gen_active) o_data <= wave_data;
+    end
 
     nco_control u_nco_control (
         .i_clk        (i_clk),
@@ -51,7 +56,7 @@ module task_13 #(
         .i_phase      (phase),
         .i_n_periods  (n_periods[10:0]),
         .i_wave_shape (wave_shape[1:0]),
-        .o_data       (o_data)
+        .o_data       (wave_data)
     );
 
 endmodule

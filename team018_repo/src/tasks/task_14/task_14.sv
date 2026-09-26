@@ -18,13 +18,14 @@ module task_14 #(
 );
 
     // Memorias BRAM
-    (* ram_style = "block" *) logic [15:0] prog_mem [0:512];
+    (* ram_style = "block" *) logic [15:0] prog_mem [0:511];
     (* ram_style = "block" *) logic [7:0]  data_mem [0:1023];
 
     typedef enum logic [2:0] {
         ST_LOAD,
         ST_FETCH,
         ST_EXEC,
+        ST_LOAD_DATA,
         ST_DUMP_PREP,
         ST_DUMP
     } state_t;
@@ -34,6 +35,7 @@ module task_14 #(
     // Registros del procesador
     logic [8:0]  pc;
     logic [9:0]  dump_addr;
+    logic [9:0] dump_sent;
     logic [10:0] load_byte_cnt;
     logic [7:0]  r0, r1;
     logic        carry;
@@ -52,6 +54,11 @@ module task_14 #(
     assign addr_imm10 = instr[9:0];
     assign imm8       = instr[7:0];
 
+    // Valores leídos de registros
+    logic [7:0] rx_val, ry_val;
+    assign rx_val = rx_sel ? r1 : r0;
+    assign ry_val = ry_sel ? r1 : r0;
+
     // Señales de control para memoria de datos
     logic [9:0] dm_addr;
     logic [7:0] dm_din;
@@ -66,7 +73,7 @@ module task_14 #(
             dm_we   = i_valid && load_byte_cnt[10];
         end else if (state == ST_EXEC && opcode == 5'b01001) begin // STRM
             dm_addr = addr_imm10;
-            dm_din  = rx_sel ? r1 : r0;
+            dm_din  = rx_val;
             dm_we   = 1'b1;
         end else if (state == ST_DUMP || state == ST_DUMP_PREP) begin
             dm_addr = dump_addr;
@@ -79,7 +86,7 @@ module task_14 #(
         end
     end
 
-    // Instancia / Inferencia síncrona de Data BRAM
+    // Instancia / Inferencia síncrona de Data BRAM (evita driver múltiple)
     always_ff @(posedge i_clk) begin
         if (dm_we) begin
             data_mem[dm_addr] <= dm_din;
@@ -93,6 +100,7 @@ module task_14 #(
             state         <= ST_LOAD;
             pc            <= '0;
             dump_addr     <= '0;
+            dump_sent     <= '0;
             load_byte_cnt <= '0;
             r0            <= '0;
             r1            <= '0;
@@ -127,7 +135,7 @@ module task_14 #(
                     end
                 end
 
-                // Estado de Lectura de Instrucción
+                // Estado de Lectura de Instrucción (Respeta el ciclo de latencia de BRAM)
                 ST_FETCH: begin
                     instr <= prog_mem[pc];
                     pc    <= pc + 1'b1;
@@ -137,19 +145,17 @@ module task_14 #(
                 ST_EXEC: begin
                     state <= ST_FETCH; // Por defecto pasa a la siguiente instrucción
 
-                    // Variables locales para evaluar rx y ry de forma aislada
-                    automatic logic [7:0] rx = rx_sel ? r1 : r0;
-                    automatic logic [7:0] ry = ry_sel ? r1 : r0;
-
                     case (opcode)
                         5'b00000: begin
-                            if (instr[11] == 1'b1) begin // STOP
+                            if (instr != 16'h0000) begin
                                 state     <= ST_DUMP_PREP;
                                 dump_addr <= '0;
                             end
                         end
 
-                        5'b00010: carry <= instr[11]; // CLRC / SETC
+                        5'b00001: begin state <= ST_DUMP_PREP; dump_addr <= '0; end
+                        5'b00010: carry <= 1'b0;
+                        5'b00011: carry <= 1'b1;
 
                         5'b00100: pc <= addr_imm10[8:0]; // JMP
 
@@ -157,12 +163,9 @@ module task_14 #(
 
                         5'b00110: if (carry) pc <= addr_imm10[8:0]; // CJMPC
 
-                        5'b01000: begin // LDRM
-                            if (rx_sel) r1 <= dm_dout;
-                            else        r0 <= dm_dout;
-                        end
+                        5'b01000: state <= ST_LOAD_DATA;
 
-                        5'b01001: ; // STRM (Manejado en bloque combinacional de memoria)
+                        5'b01001: ; // STRM (Manejado en bloque de memoria)
 
                         5'b01010: begin // LDRI
                             if (rx_sel) r1 <= imm8;
@@ -170,55 +173,55 @@ module task_14 #(
                         end
 
                         5'b01011: begin // ADDR
-                            automatic logic [8:0] sum = rx + ry + carry;
+                            automatic logic [8:0] sum = rx_val + ry_val + carry;
                             carry <= sum[8];
                             if (rx_sel) r1 <= sum[7:0]; else r0 <= sum[7:0];
                         end
 
                         5'b01100: begin // SUBR
-                            automatic logic [8:0] sub = rx - ry - carry;
+                            automatic logic [8:0] sub = rx_val - ry_val - carry;
                             carry <= sub[8];
                             if (rx_sel) r1 <= sub[7:0]; else r0 <= sub[7:0];
                         end
 
                         5'b01101: begin // ROL
-                            carry <= rx[7];
-                            if (rx_sel) r1 <= {rx[6:0], rx[7]};
-                            else        r0 <= {rx[6:0], rx[7]};
+                            carry <= rx_val[7];
+                            if (rx_sel) r1 <= {rx_val[6:0], rx_val[7]};
+                            else        r0 <= {rx_val[6:0], rx_val[7]};
                         end
 
                         5'b01110: begin // ROR
-                            carry <= rx[0];
-                            if (rx_sel) r1 <= {rx[0], rx[7:1]};
-                            else        r0 <= {rx[0], rx[7:1]};
+                            carry <= rx_val[0];
+                            if (rx_sel) r1 <= {rx_val[0], rx_val[7:1]};
+                            else        r0 <= {rx_val[0], rx_val[7:1]};
                         end
 
                         5'b01111: begin // SHR
-                            carry <= rx[0];
-                            if (rx_sel) r1 <= {1'b0, rx[7:1]};
-                            else        r0 <= {1'b0, rx[7:1]};
+                            carry <= rx_val[0];
+                            if (rx_sel) r1 <= {1'b0, rx_val[7:1]};
+                            else        r0 <= {1'b0, rx_val[7:1]};
                         end
 
                         5'b10000: begin // SHL
-                            carry <= rx[7];
-                            if (rx_sel) r1 <= {rx[6:0], 1'b0};
-                            else        r0 <= {rx[6:0], 1'b0};
+                            carry <= rx_val[7];
+                            if (rx_sel) r1 <= {rx_val[6:0], 1'b0};
+                            else        r0 <= {rx_val[6:0], 1'b0}; // Solucionado a 1'b0
                         end
 
                         5'b10001: begin // ASHR
-                            carry <= rx[0];
-                            if (rx_sel) r1 <= {rx[7], rx[7:1]};
-                            else        r0 <= {rx[7], rx[7:1]};
+                            carry <= rx_val[0];
+                            if (rx_sel) r1 <= {rx_val[7], rx_val[7:1]};
+                            else        r0 <= {rx_val[7], rx_val[7:1]};
                         end
 
                         5'b10010: begin // NAND
-                            if (rx_sel) r1 <= ~(rx & ry);
-                            else        r0 <= ~(rx & ry);
+                            if (rx_sel) r1 <= ~(rx_val & ry_val);
+                            else        r0 <= ~(rx_val & ry_val);
                         end
 
-                        5 meb10011: begin // XOR
-                            if (rx_sel) r1 <= rx ^ ry;
-                            else        r0 <= rx ^ ry;
+                        5'b10011: begin // XOR
+                            if (rx_sel) r1 <= rx_val ^ ry_val;
+                            else        r0 <= rx_val ^ ry_val;
                         end
 
                         default: begin // Opcodes no definidos provocan STOP
@@ -229,7 +232,14 @@ module task_14 #(
                 end
 
                 // Prepara la dirección para compensar la latencia de 1 ciclo de la BRAM
+                ST_LOAD_DATA: begin
+                    if (rx_sel) r1 <= dm_dout;
+                    else r0 <= dm_dout;
+                    state <= ST_FETCH;
+                end
+
                 ST_DUMP_PREP: begin
+                    dump_sent <= '0;
                     dump_addr <= dump_addr + 1'b1;
                     state     <= ST_DUMP;
                 end
@@ -239,8 +249,11 @@ module task_14 #(
                     o_data    <= dm_dout;
                     dump_addr <= dump_addr + 1'b1;
 
-                    if (dump_addr == 1023) begin
+                    dump_sent <= dump_sent + 1'b1;
+                    if (dump_sent == 1023) begin
                         o_last <= 1'b1;
+                        load_byte_cnt <= '0;
+                        r0 <= '0; r1 <= '0; carry <= 1'b0;
                         state  <= ST_LOAD;
                     end
                 end
