@@ -54,6 +54,30 @@ La memoria de entrada de 2048x32 se infirió como RAM distribuida debido a las
 dos lecturas asíncronas que sostienen un bloque de cálculo por ciclo. Es la
 principal oportunidad para reducir recursos con una RAM síncrona canalizada.
 
+## Resumen de implementación y decisiones
+
+1. Se preservó exactamente la interfaz entregada de `task_9`.
+2. Se implementó el formato de configuración de entrada/salida y el orden
+   columnar de los bloques 2x2 indicado por el enunciado.
+3. Se implementó la multiplicación Cracoviana como cuatro acumulaciones en
+   paralelo por bloque de salida y normalización de exponente común.
+4. Se corrigió el cálculo del número de muestras para que no trunque las
+   configuraciones grandes.
+5. Se verificó el vector oficial mínimo con XSim y se sintetizó para KV260.
+
+### Revisión de recursos
+
+Se evaluó una alternativa con lectura síncrona y atributo de BRAM. En esta
+topología, Vivado no infirió BRAM y el resultado empeoró a 9088 LUT y 426
+registros. Se descartó, se restauró la versión asíncrona y se mantiene la
+medición de 5786 LUT, 340 registros y 1 DSP.
+
+Para reducir el coste de memoria de verdad sería necesario rediseñar el
+calendario de acceso con una RAM de doble puerto y una tubería explícita de
+lectura, manteniendo una muestra calculada por ciclo. Es una optimización
+posterior de riesgo moderado; no se ha aplicado para no alterar el resultado
+funcional ya verificado.
+
 ## Límites conocidos
 
 La codificación de salida reserva cuatro bits para el exponente, como especifica
