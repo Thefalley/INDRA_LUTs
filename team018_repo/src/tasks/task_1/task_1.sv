@@ -16,7 +16,7 @@ module task_1
 );
 
   localparam int MAX_DATA_BYTES = 4096;
-  localparam int FIRST_BUFFER_BYTES = 513;
+  localparam int FIRST_BUFFER_BYTES = 512;
 
   typedef enum logic [3:0] {
     ST_WAIT,
@@ -27,6 +27,7 @@ module task_1
     ST_SHORT_ROT_PREP,
     ST_SHORT_ROT_OUT,
     ST_ROT_RIGHT_PREP,
+    ST_ROT_RIGHT_PRIME,
     ST_ROT_RIGHT_OUT
   } state_t;
 
@@ -34,8 +35,12 @@ module task_1
 
   logic [7:0] control_1;
   logic [7:0] control_0;
-  logic [7:0] data_mem [0:MAX_DATA_BYTES-1];
-  logic [7:0] first_mem [0:FIRST_BUFFER_BYTES-1];
+  (* ram_style = "distributed" *) logic [7:0] first_mem_a [0:FIRST_BUFFER_BYTES-1];
+  logic [7:0] first_mem_b [0:FIRST_BUFFER_BYTES-1];
+  (* ram_style = "distributed" *) logic [7:0] right_mem_a [0:FIRST_BUFFER_BYTES-1];
+  (* ram_style = "distributed" *) logic [7:0] right_mem_b [0:FIRST_BUFFER_BYTES-1];
+  (* ram_style = "block" *) logic [7:0] rot_mem_a [0:MAX_DATA_BYTES-1];
+  (* ram_style = "block" *) logic [7:0] rot_mem_b [0:MAX_DATA_BYTES-1];
   logic [11:0] read_index;
   logic [11:0] output_index;
   logic [9:0] flush_index;
@@ -43,8 +48,12 @@ module task_1
   logic [7:0] last_data;
   logic [11:0] rot_a;
   logic [11:0] rot_b;
+  logic [11:0] rot_read_addr_a;
+  logic [11:0] rot_read_addr_b;
   logic [2:0] rot_bits;
   logic [15:0] remaining_shift;
+  logic [7:0] rot_data_a;
+  logic [7:0] rot_data_b;
 
   wire [11:0] shift_value = {control_1[3:0], control_0};
   wire [8:0] shift_bytes = shift_value[11:3];
@@ -75,18 +84,18 @@ module task_1
           if (shift_bytes == 0)
             value = current_data;
           else
-            value = data_mem[current_index - shift_bytes];
+            value = right_mem_a[current_index[8:0] - shift_bytes];
         end else if (current_index == shift_bytes) begin
           if (shift_bytes == 0)
             value = current_data >> shift_value[2:0];
           else
-            value = data_mem[0] >> shift_value[2:0];
+            value = right_mem_a[current_index[8:0] - shift_bytes] >> shift_value[2:0];
         end else if (shift_bytes == 0) begin
-          value = (data_mem[current_index - 1'b1] << (8 - shift_value[2:0])) |
+          value = (right_mem_a[current_index[8:0] - 1'b1] << (8 - shift_value[2:0])) |
                   (current_data >> shift_value[2:0]);
         end else begin
-          value = (data_mem[current_index - shift_bytes - 1'b1] << (8 - shift_value[2:0])) |
-                  (data_mem[current_index - shift_bytes] >> shift_value[2:0]);
+          value = (right_mem_a[current_index[8:0] - shift_bytes - 1'b1] << (8 - shift_value[2:0])) |
+                  (right_mem_b[current_index[8:0] - shift_bytes] >> shift_value[2:0]);
         end
       end
       get_right_stream_byte = value;
@@ -100,32 +109,32 @@ module task_1
       if (source_index >= data_count)
         get_short_shift_byte = '0;
       else if (!shift_partial)
-        get_short_shift_byte = data_mem[source_index];
+        get_short_shift_byte = first_mem_a[source_index[8:0]];
       else if (source_index == data_count - 1'b1)
-        get_short_shift_byte = data_mem[source_index] << shift_value[2:0];
+        get_short_shift_byte = first_mem_a[source_index[8:0]] << shift_value[2:0];
       else
-        get_short_shift_byte = (data_mem[source_index] << shift_value[2:0]) |
-                               (data_mem[source_index + 1'b1] >> (8 - shift_value[2:0]));
+        get_short_shift_byte = (first_mem_a[source_index[8:0]] << shift_value[2:0]) |
+                               (first_mem_b[source_index[8:0] + 1'b1] >> (8 - shift_value[2:0]));
     end
   endfunction
 
-  function automatic logic [7:0] get_rotate_left_byte;
+  function automatic logic [7:0] get_short_rotate_left_byte;
     begin
       if (rot_bits == 0)
-        get_rotate_left_byte = data_mem[rot_a];
+        get_short_rotate_left_byte = first_mem_a[rot_a[8:0]];
       else
-        get_rotate_left_byte = (data_mem[rot_a] << rot_bits) |
-                               (data_mem[rot_b] >> (8 - rot_bits));
+        get_short_rotate_left_byte = (first_mem_a[rot_a[8:0]] << rot_bits) |
+                                     (first_mem_b[rot_b[8:0]] >> (8 - rot_bits));
     end
   endfunction
 
   function automatic logic [7:0] get_rotate_right_byte;
     begin
       if (rot_bits == 0)
-        get_rotate_right_byte = data_mem[rot_a];
+        get_rotate_right_byte = rot_data_a;
       else
-        get_rotate_right_byte = (data_mem[rot_b] << (8 - rot_bits)) |
-                                (data_mem[rot_a] >> rot_bits);
+        get_rotate_right_byte = (rot_data_b << (8 - rot_bits)) |
+                                (rot_data_a >> rot_bits);
     end
   endfunction
 
@@ -137,13 +146,13 @@ module task_1
         if (shift_partial && index == 0)
           value = last_data << shift_value[2:0];
       end else if (!shift_partial) begin
-        value = first_mem[index];
+        value = first_mem_a[index[8:0]];
       end else if (index == 0) begin
         value = (last_data << shift_value[2:0]) |
-                (first_mem[0] >> (8 - shift_value[2:0]));
+                (first_mem_b[0] >> (8 - shift_value[2:0]));
       end else begin
-        value = (first_mem[index - 1'b1] << shift_value[2:0]) |
-                (first_mem[index] >> (8 - shift_value[2:0]));
+        value = (first_mem_a[index[8:0] - 1'b1] << shift_value[2:0]) |
+                (first_mem_b[index[8:0]] >> (8 - shift_value[2:0]));
       end
       get_left_flush_byte = value;
     end
@@ -157,6 +166,17 @@ module task_1
   end
 
   always_ff @(posedge i_clk) begin
+    if (state == ST_STREAM && i_valid) begin
+      right_mem_a[read_index[8:0]] <= i_data;
+      right_mem_b[read_index[8:0]] <= i_data;
+      rot_mem_a[read_index] <= i_data;
+      rot_mem_b[read_index] <= i_data;
+    end
+    rot_data_a <= rot_mem_a[rot_read_addr_a];
+    rot_data_b <= rot_mem_b[rot_read_addr_b];
+  end
+
+  always_ff @(posedge i_clk) begin
     if (i_rst) begin
       control_1 <= '0;
       control_0 <= '0;
@@ -167,6 +187,8 @@ module task_1
       last_data <= '0;
       rot_a <= '0;
       rot_b <= '0;
+      rot_read_addr_a <= '0;
+      rot_read_addr_b <= '0;
       rot_bits <= '0;
       remaining_shift <= '0;
     end else begin
@@ -187,10 +209,11 @@ module task_1
 
         ST_STREAM: begin
           if (i_valid) begin
-            data_mem[read_index] <= i_data;
             last_data <= i_data;
-            if (read_index < lookahead_bytes)
-              first_mem[read_index] <= i_data;
+            if (read_index < lookahead_bytes) begin
+              first_mem_a[read_index[8:0]] <= i_data;
+              first_mem_b[read_index[8:0]] <= i_data;
+            end
             if (i_last) begin
               data_count <= read_index + 13'd1;
               output_index <= '0;
@@ -228,16 +251,31 @@ module task_1
               if (remaining_shift[14:3] == 0) begin
                 rot_a <= '0;
                 rot_b <= data_count - 1'b1;
+                rot_read_addr_a <= '0;
+                rot_read_addr_b <= data_count - 1'b1;
               end else begin
                 rot_a <= data_count - remaining_shift[14:3];
                 rot_b <= data_count - remaining_shift[14:3] - 1'b1;
+                rot_read_addr_a <= data_count - remaining_shift[14:3];
+                rot_read_addr_b <= data_count - remaining_shift[14:3] - 1'b1;
               end
             end
           end
         end
 
+        ST_ROT_RIGHT_PRIME: begin
+          if (rot_a == data_count - 1'b1)
+            rot_read_addr_a <= '0;
+          else
+            rot_read_addr_a <= rot_a + 1'b1;
+          if (rot_b == data_count - 1'b1)
+            rot_read_addr_b <= '0;
+          else
+            rot_read_addr_b <= rot_b + 1'b1;
+        end
+
         ST_SHORT_ROT_OUT,
-        ST_ROT_RIGHT_OUT: begin
+      ST_ROT_RIGHT_OUT: begin
           if (output_index != data_count - 1'b1) begin
             output_index <= output_index + 1'b1;
             if (rot_a == data_count - 1'b1)
@@ -248,6 +286,16 @@ module task_1
               rot_b <= '0;
             else
               rot_b <= rot_b + 1'b1;
+            if (state == ST_ROT_RIGHT_OUT) begin
+              if (rot_read_addr_a == data_count - 1'b1)
+                rot_read_addr_a <= '0;
+              else
+                rot_read_addr_a <= rot_read_addr_a + 1'b1;
+              if (rot_read_addr_b == data_count - 1'b1)
+                rot_read_addr_b <= '0;
+              else
+                rot_read_addr_b <= rot_read_addr_b + 1'b1;
+            end
           end
         end
 
@@ -335,7 +383,7 @@ module task_1
 
       ST_SHORT_ROT_OUT: begin
         o_valid = 1'b1;
-        o_data = get_rotate_left_byte();
+        o_data = get_short_rotate_left_byte();
         o_last = (output_index == data_count - 1'b1);
         if (o_last)
           next_state = ST_WAIT;
@@ -343,7 +391,11 @@ module task_1
 
       ST_ROT_RIGHT_PREP: begin
         if (remaining_shift < {data_count, 3'b000})
-          next_state = ST_ROT_RIGHT_OUT;
+          next_state = ST_ROT_RIGHT_PRIME;
+      end
+
+      ST_ROT_RIGHT_PRIME: begin
+        next_state = ST_ROT_RIGHT_OUT;
       end
 
       ST_ROT_RIGHT_OUT: begin

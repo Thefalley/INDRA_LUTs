@@ -33,7 +33,7 @@ Esta elección prioriza LUTs y una ruta combinacional más corta frente a una fo
 | `ST_LEFT_FLUSH` | Emite los bytes pendientes del final para operaciones a la izquierda. |
 | `ST_SHORT_SHIFT_OUT` | Emite un desplazamiento de un paquete más corto que la ventana. |
 | `ST_SHORT_ROT_PREP` / `ST_SHORT_ROT_OUT` | Reduce y emite una rotación izquierda corta. |
-| `ST_ROT_RIGHT_PREP` / `ST_ROT_RIGHT_OUT` | Reduce y emite una rotación derecha. |
+| `ST_ROT_RIGHT_PREP` / `ST_ROT_RIGHT_PRIME` / `ST_ROT_RIGHT_OUT` | Reduce, precarga BRAM y emite una rotación derecha. |
 
 ## Verificación
 
@@ -60,11 +60,12 @@ Síntesis aislada con Vivado 2025.2 para `xck26-sfvc784-2LV-c`:
 
 | Métrica | Resultado |
 | --- | ---: |
-| CLB LUTs | 71.034 |
-| CLB Registers | 37.388 |
+| CLB LUTs | 5.901 |
+| CLB Registers | 4.328 |
 | DSPs | 0 |
-| `LUTs + Registers + 10*DSPs` | **108.422** |
+| `LUTs + Registers + 10*DSPs` | **10.229** |
+| Block RAM Tile | 2 |
 
-La formulación anterior usaba 122.267 LUTs y excedía la capacidad de 117.120 LUTs del dispositivo. Al sustituir el cálculo bit a bit con división/módulo por punteros y accesos adyacentes, se reduce el uso a 60,65% de LUTs y el diseño cabe en el dispositivo.
+La formulación inicial usaba 122.267 LUTs y excedía la capacidad de 117.120 LUTs del dispositivo. La primera optimización la redujo a una puntuación de 108.422, pero aún conservaba el paquete de 4.096 bytes como registros y multiplexores asíncronos. La versión final usa dos BRAM36 síncronas para la rotación derecha y RAM distribuida para las ventanas de streaming: reduce la puntuación a 10.229 y deja el uso de LUTs en 5,04%.
 
 XSim ha completado sin errores el smoke test, los cuatro modos principales (shift y rotate, izquierda y derecha) y los paquetes cortos de un byte con desplazamientos no alineados.
