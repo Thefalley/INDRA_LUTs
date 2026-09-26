@@ -4,13 +4,11 @@ module nco_control (
     input  logic        i_clk,
     input  logic        i_rst,
 
-    // Entradas AXI
     input  logic        i_valid,
     input  logic        i_first,
     input  logic        i_last,
     input  logic [15:0] i_data,
 
-    // Salidas de Control
     output logic        o_valid,
     output logic        o_last,
     output logic [15:0] o_n_periods,

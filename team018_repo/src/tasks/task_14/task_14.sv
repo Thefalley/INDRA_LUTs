@@ -203,7 +203,7 @@ module task_14 #(
                         5'b10000: begin // SHL
                             carry <= rx_val[7];
                             if (rx_sel) r1 <= {rx_val[6:0], 1'b0};
-                            else        r0 <= {rx_val[6:0], 1 meb0}; // Solucionado a 1'b0
+                            else        r0 <= {rx_val[6:0], 1'b0}; // Solucionado a 1'b0
                         end
 
                         5'b10001: begin // ASHR

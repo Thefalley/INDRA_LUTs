@@ -1,30 +1,27 @@
 `timescale 1ns / 1ps
-module task_13
-#(
-  parameter int TASK_INPUT_WIDTH  = 16,
-  parameter int TASK_OUTPUT_WIDTH = 16
+module task_13 #(
+    parameter int TASK_INPUT_WIDTH  = 16,
+    parameter int TASK_OUTPUT_WIDTH = 16
 )(
-  input wire                          i_clk,
-  input wire                          i_rst,
+    input wire                          i_clk,
+    input wire                          i_rst,
 
-  input wire                          i_valid,
-  input wire                          i_first,
-  input wire                          i_last,
-  input wire  [TASK_INPUT_WIDTH-1:0]  i_data,
+    input wire                          i_valid,
+    input wire                          i_first,
+    input wire                          i_last,
+    input wire  [TASK_INPUT_WIDTH-1:0]  i_data,
 
-  output logic                         o_valid,
-  output logic                         o_last,
-  output logic [TASK_OUTPUT_WIDTH-1:0] o_data
+    output logic                        o_valid,
+    output logic                        o_last,
+    output logic [TASK_OUTPUT_WIDTH-1:0] o_data
 );
 
-    // Internal signals
     logic [15:0] n_periods;
     logic [15:0] wave_shape;
     logic [10:0] phase;
     logic        gen_active;
     logic [11:0] sample_cnt;
 
-    // Inst 1: Control and FSM
     nco_control u_nco_control (
         .i_clk        (i_clk),
         .i_rst        (i_rst),
@@ -40,7 +37,6 @@ module task_13
         .o_sample_cnt (sample_cnt)
     );
 
-    // Inst 2: Phase accumulator
     phase_accumulator u_phase_accumulator (
         .i_clk        (i_clk),
         .i_rst        (i_rst),
@@ -49,7 +45,6 @@ module task_13
         .o_phase      (phase)
     );
 
-    // Inst 3: Wave Generator
     wave_generator #(
         .DATA_WIDTH(TASK_OUTPUT_WIDTH)
     ) u_wave_generator (

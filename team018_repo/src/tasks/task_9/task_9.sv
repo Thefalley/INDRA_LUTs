@@ -20,7 +20,6 @@ module task_9 #(
 
     localparam int MAX_INPUT_SAMPLES = 2048;
 
-    // BRAM estilo Block
     (* ram_style = "block" *) logic [31:0] sample_mem [0:MAX_INPUT_SAMPLES-1];
 
     typedef enum logic [2:0] {
@@ -36,7 +35,6 @@ module task_9 #(
 
     state_t state, next_state;
 
-    // Registros de control
     logic [7:0]  num_pair, num_col_a, num_col_b;
     logic [5:0]  row_blocks, col_a_blocks, col_b_blocks;
     logic [11:0] samples_per_pair, input_samples, receive_count;
@@ -44,21 +42,17 @@ module task_9 #(
     logic [5:0]  out_col_index, out_row_index, row_block_index;
     logic [11:0] pair_base;
 
-    // Acumuladores de 48 bits
     logic signed [47:0] sum_00, sum_01, sum_10, sum_11;
     logic [3:0]  result_exp;
 
-    // Direccionamiento y datos BRAM
     logic [10:0] addr_a, addr_b;
     logic [31:0] a_sample, b_sample;
 
-    // Decodificación de sub-elementos
     logic signed [6:0] a_00, a_01, a_10, a_11;
     logic signed [6:0] b_00, b_01, b_10, b_11;
     logic [3:0] a_exp, b_exp;
     logic [4:0] product_exp;
 
-    // Lectura/Escritura de BRAM sincronizada
     always_ff @(posedge i_clk) begin
         if (i_valid && (state == ST_RECEIVE)) begin
             sample_mem[receive_count] <= i_data;
@@ -67,13 +61,11 @@ module task_9 #(
         b_sample <= sample_mem[addr_b];
     end
 
-    // Generación de direcciones combinacionales
     always_comb begin
         addr_a = pair_base + out_col_index * row_blocks + row_block_index;
         addr_b = pair_base + col_a_blocks * row_blocks + out_row_index * row_blocks + row_block_index;
     end
 
-    // Decodificación de palabras de 32 bits
     assign a_11 = a_sample[31:25];
     assign a_10 = a_sample[24:18];
     assign a_01 = a_sample[17:11];
@@ -88,13 +80,11 @@ module task_9 #(
 
     assign product_exp = {1'b0, a_exp} + {1'b0, b_exp};
 
-    // Registro de productos intermedios pipelineados
     logic signed [47:0] prod_00_a, prod_00_b;
     logic signed [47:0] prod_01_a, prod_01_b;
     logic signed [47:0] prod_10_a, prod_10_b;
     logic signed [47:0] prod_11_a, prod_11_b;
 
-    // Etapa 1 del Pipeline: Multiplicación y escalado
     always_ff @(posedge i_clk) begin
         prod_00_a <= (a_00 * b_00) <<< product_exp;
         prod_00_b <= (a_10 * b_10) <<< product_exp;
@@ -109,7 +99,6 @@ module task_9 #(
         prod_11_b <= (a_11 * b_11) <<< product_exp;
     end
 
-    // Detección del desplazamiento máximo
     function automatic logic [5:0] get_shift(input logic signed [47:0] val);
         logic [47:0] mag;
         begin
@@ -133,7 +122,6 @@ module task_9 #(
         if (s3 > max_shift) max_shift = s3;
     end
 
-    // FSM Secuencial
     always_ff @(posedge i_clk) begin
         if (i_rst) begin
             state           <= ST_WAIT_CONFIG;
@@ -207,10 +195,6 @@ module task_9 #(
                 end
 
                 ST_OUTPUT_DATA: begin
-                    sum_00 <= '0;
-                    sum_01 <= '0;
-                    sum_10 <= '0;
-                    sum_11 <= '0;
                     if (out_row_index == col_b_blocks - 1'b1) begin
                         out_row_index <= '0;
                         if (out_col_index == col_a_blocks - 1'b1) begin
