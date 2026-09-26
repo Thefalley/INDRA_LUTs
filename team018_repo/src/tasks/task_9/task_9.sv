@@ -20,7 +20,7 @@ module task_9 #(
 
     localparam int MAX_INPUT_SAMPLES = 2048;
 
-    // BRAM estilo Block para ahorrar FFs
+    // BRAM estilo Block
     (* ram_style = "block" *) logic [31:0] sample_mem [0:MAX_INPUT_SAMPLES-1];
 
     typedef enum logic [2:0] {
@@ -58,7 +58,7 @@ module task_9 #(
     logic [3:0] a_exp, b_exp;
     logic [4:0] product_exp;
 
-    // Lectura de BRAM
+    // Lectura/Escritura de BRAM sincronizada
     always_ff @(posedge i_clk) begin
         if (i_valid && (state == ST_RECEIVE)) begin
             sample_mem[receive_count] <= i_data;
@@ -88,13 +88,13 @@ module task_9 #(
 
     assign product_exp = {1'b0, a_exp} + {1'b0, b_exp};
 
-    // Registro de productos intermedios pipelineados para romper la ruta crítica
+    // Registro de productos intermedios pipelineados
     logic signed [47:0] prod_00_a, prod_00_b;
     logic signed [47:0] prod_01_a, prod_01_b;
     logic signed [47:0] prod_10_a, prod_10_b;
     logic signed [47:0] prod_11_a, prod_11_b;
 
-    // Etapa 1 del Pipeline: Multiplicación y escalado dinámico
+    // Etapa 1 del Pipeline: Multiplicación y escalado
     always_ff @(posedge i_clk) begin
         prod_00_a <= (a_00 * b_00) <<< product_exp;
         prod_00_b <= (a_10 * b_10) <<< product_exp;
@@ -187,7 +187,6 @@ module task_9 #(
                 end
 
                 ST_CALCULATE: begin
-                    // Etapa 2 del Pipeline: Acumulación directa de bajo retardo
                     sum_00 <= sum_00 + prod_00_a + prod_00_b;
                     sum_01 <= sum_01 + prod_01_a + prod_01_b;
                     sum_10 <= sum_10 + prod_10_a + prod_10_b;
@@ -201,10 +200,10 @@ module task_9 #(
 
                 ST_NORMALIZE: begin
                     result_exp <= max_shift[3:0];
-                    sum_00 <= sum_00 >>> max_shift;
-                    sum_01 <= sum_01 >>> max_shift;
-                    sum_10 <= sum_10 >>> max_shift;
-                    sum_11 <= sum_11 >>> max_shift;
+                    sum_00     <= sum_00 >>> max_shift;
+                    sum_01     <= sum_01 >>> max_shift;
+                    sum_10     <= sum_10 >>> max_shift;
+                    sum_11     <= sum_11 >>> max_shift;
                 end
 
                 ST_OUTPUT_DATA: begin
@@ -231,12 +230,11 @@ module task_9 #(
         end
     end
 
-    // Lógica Combinacional FSM
     always_comb begin
         next_state = state;
         o_valid    = 1'b0;
         o_first    = 1'b0;
-        o_last     = 1 me0;
+        o_last     = 1'b0;
         o_data     = '0;
 
         case (state)
