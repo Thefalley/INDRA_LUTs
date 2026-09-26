@@ -13,7 +13,7 @@ module task_5 #(
     input wire                          i_valid,
     input wire                          i_first,
     input wire                          i_last,
-    input wire [TASK_INPUT_WIDTH-1:0]  i_data,
+    input wire  [TASK_INPUT_WIDTH-1:0]  i_data,
 
     output logic                        o_valid,
     output logic                        o_last,
@@ -22,15 +22,18 @@ module task_5 #(
 
     localparam int PREFIX_LEN = 45;
 
-    // Memoria para el mensaje de entrada
+    // Memoria para el mensaje (Inferencia adecuada de Block RAM)
     (* ram_style = "block" *) logic [7:0] msg_mem [0:MAX_MSG_LENGTH-1];
     logic [10:0] msg_length;
     logic [10:0] rx_cnt;
 
-    // Registros para el espacio de búsqueda brute-force
+    // Registros para la búsqueda
     logic [6:0] key_r0, key_r1, key_ref;
     logic [6:0] cur_r0, cur_r1;
     logic [5:0] check_idx;
+    
+    // Sustituto eficiente del modulo % 10
+    logic [3:0] mod10_cnt;
 
     // Rotores para transmisión
     logic [6:0] rot0, rot1;
@@ -47,7 +50,6 @@ module task_5 #(
 
     state_t state;
 
-    // Mapeo sintetizable del prefijo
     function automatic logic [7:0] get_prefix_char(input logic [5:0] idx);
         case (idx)
             6'd0:  get_prefix_char = "H"; 6'd1:  get_prefix_char = "e"; 6'd2:  get_prefix_char = "l";
@@ -69,7 +71,6 @@ module task_5 #(
         endcase
     endfunction
 
-    // Función de desencriptación
     function automatic logic [7:0] decode_byte(
         input logic [7:0] in_char,
         input logic [6:0] r0,
@@ -86,7 +87,6 @@ module task_5 #(
         return {1'b0, c};
     endfunction
 
-    // FSM Principal
     always_ff @(posedge i_clk) begin
         if (i_rst) begin
             state      <= ST_IDLE;
@@ -97,6 +97,7 @@ module task_5 #(
             key_r1     <= '0;
             key_ref    <= '0;
             check_idx  <= '0;
+            mod10_cnt  <= '0;
             o_valid    <= 1'b0;
             o_last     <= 1'b0;
             o_data     <= '0;
@@ -130,22 +131,29 @@ module task_5 #(
                     cur_r0    <= key_r0;
                     cur_r1    <= key_r1;
                     check_idx <= '0;
+                    mod10_cnt <= '0;
                     state     <= ST_CHECK_STEP;
                 end
 
                 ST_CHECK_STEP: begin
                     if (decode_byte(msg_mem[check_idx], cur_r0, cur_r1, key_ref) == get_prefix_char(check_idx)) begin
                         if (check_idx == PREFIX_LEN - 1) begin
-                            // Clave válida encontrada
-                            rot0   <= key_r0;
-                            rot1   <= key_r1;
-                            tx_cnt <= '0;
-                            state  <= ST_STREAM_OUT;
+                            rot0      <= key_r0;
+                            rot1      <= key_r1;
+                            tx_cnt    <= '0;
+                            mod10_cnt <= '0;
+                            state     <= ST_STREAM_OUT;
                         end else begin
                             check_idx <= check_idx + 1'b1;
                             cur_r0    <= cur_r0 + 1'b1;
-                            if ((check_idx + 1'b1) % 10 == 0)
-                                cur_r1 <= cur_r1 + 1'b1;
+                            
+                            // Reemplazo eficiente de % 10 mediante contador
+                            if (mod10_cnt == 4'd9) begin
+                                mod10_cnt <= '0;
+                                cur_r1    <= cur_r1 + 1'b1;
+                            end else begin
+                                mod10_cnt <= mod10_cnt + 1'b1;
+                            end
                         end
                     end else begin
                         state <= ST_ADVANCE_KEY;
@@ -173,12 +181,15 @@ module task_5 #(
                         o_data  <= decode_byte(msg_mem[tx_cnt], rot0, rot1, key_ref);
                         o_last  <= (tx_cnt == msg_length - 1'b1);
 
-                        rot0 <= rot0 + 1'b1;
-                        if ((tx_cnt + 1'b1) % 10 == 0) begin
-                            rot1 <= rot1 + 1'b1;
-                        end
-
+                        rot0   <= rot0 + 1'b1;
                         tx_cnt <= tx_cnt + 1'b1;
+
+                        if (mod10_cnt == 4'd9) begin
+                            mod10_cnt <= '0;
+                            rot1      <= rot1 + 1'b1;
+                        end else begin
+                            mod10_cnt <= mod10_cnt + 1'b1;
+                        end
                     end else begin
                         o_valid <= 1'b0;
                         o_last  <= 1'b0;
