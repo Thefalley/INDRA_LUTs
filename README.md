@@ -1,29 +1,32 @@
-# INDRA LUTs — entrega y material de trabajo
+# INDRA LUTs — Hackathon
 
-Este repositorio conserva separadas las tres fuentes de trabajo del hackathon:
+Este repositorio reúne el trabajo del equipo y la entrega del hackathon, sin
+mezclar lo que se presentó al juez con las pruebas o desarrollos que quedaron a
+medias.
 
-| Ruta | Estado | Uso |
-| --- | --- | --- |
-| [`entrega_jenkins_e209aad`](entrega_jenkins_e209aad) | **Entrega real** | Snapshot autocontenido preparado para Jenkins, basado en el commit GitLab `e209aad`. Es el punto de partida para reproducir o auditar lo entregado. |
-| [`team018_repo`](team018_repo) | **Trabajo intermedio** | Árbol de desarrollo local del equipo. Puede contener experimentos y cambios que no pertenecen a la entrega congelada. |
-| [`material_hackathon`](material_hackathon) | **Material de referencia** | Enunciados PDF oficiales y el proyecto histórico de 2024. |
+## Dónde está cada cosa
 
-## Empezar por la entrega
+| Si buscas... | Ve a... |
+| --- | --- |
+| Lo que realmente se preparó para Jenkins | [`hackathon/2026/entrega`](hackathon/2026/entrega) |
+| El código que el equipo estaba desarrollando | [`hackathon/2026/team018_repo`](hackathon/2026/team018_repo) |
+| Las normas y PDFs oficiales de las tasks actuales | [`hackathon/2026/material`](hackathon/2026/material) |
+| Un proyecto de una edición anterior | [`hackathon/2024/referencia_historica`](hackathon/2024/referencia_historica) |
 
-La documentación y el estado de verificación de la entrega están en
-[`entrega_jenkins_e209aad/README_ENTREGA.md`](entrega_jenkins_e209aad/README_ENTREGA.md).
-Ese documento delimita las pruebas realizadas y sus límites; no debe interpretarse
-como una puntuación oficial de Jenkins.
+## La idea importante
 
-Para una comprobación local de la task 15 con Vivado 2025.2:
+La carpeta **entrega** es una fotografía de lo que se dejó listo para evaluar.
+La carpeta **team018_repo** es el espacio de desarrollo: puede contener pruebas,
+experimentos o cambios que no llegaron a la entrega. No deben confundirse.
 
-```powershell
-cd entrega_jenkins_e209aad
-./experiments/task15/run_check.ps1 -VivadoBin 'C:/AMDDesignTools/2025.2/Vivado/bin'
-```
+Antes de tocar una task, lee primero su PDF en `hackathon/2026/material`. El
+proyecto de 2024 sirve como referencia, pero no sustituye las reglas actuales.
 
-## Criterio de organización
+## Para empezar
 
-Los directorios de XSim/Vivado, ondas, logs y resultados regenerables se excluyen
-del control de versiones. Los informes y artefactos que forman parte de la entrega
-están ya dentro de `entrega_jenkins_e209aad` y se conservan allí.
+1. Abre el PDF de la task que vas a trabajar.
+2. Consulta el código en `hackathon/2026/team018_repo`.
+3. Si necesitas saber qué se entregó, lee
+   [`hackathon/2026/entrega/README_ENTREGA.md`](hackathon/2026/entrega/README_ENTREGA.md).
+
+Los logs, ondas y cachés generados por Vivado/XSim no se suben al repositorio.

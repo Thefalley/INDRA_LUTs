@@ -23,7 +23,7 @@ xvlog.log
 xelab.log
 xsim.log
 
-# Resultados transitorios locales; los informes que se entregan viven en entrega_jenkins_e209aad/
+# Resultados transitorios locales; los informes que se entregan viven en hackathon/2026/entrega/
 /reports/
 
 # Python y herramientas locales
