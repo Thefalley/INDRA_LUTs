@@ -1,0 +1,54 @@
+#-----------------------------------------------------------
+# xsim v2025.2 (64-bit)
+# SW Build 6299465 on Fri Nov 14 19:35:11 GMT 2025
+# IP Build 6300035 on Fri Nov 14 10:48:45 MST 2025
+# SharedData Build 6298862 on Thu Nov 13 04:50:51 MST 2025
+# Start of session at: Sun Sep 27 10:05:20 2026
+# Process ID         : 45032
+# Current directory  : C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/run_public
+# Command line       : xsim.exe -log public_candidate.log -mode tcl -source {xsim.dir/public15_final/xsim_script.tcl}
+# Log file           : C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/run_public/public_candidate.log
+# Journal file       : C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/run_public\xsim.jou
+# Running On         : 11LAP5CG60650LP
+# Platform           : Windows Server 2016 or Windows 10
+# Operating System   : 26200
+# Processor Detail   : Intel(R) Core(TM) Ultra 9 285H
+# CPU Frequency      : 3686 MHz
+# CPU Physical cores : 16
+# CPU Logical cores  : 16
+# Host memory        : 68111 MB
+# Swap memory        : 6796 MB
+# Total Virtual      : 74907 MB
+# Available Virtual  : 27050 MB
+#-----------------------------------------------------------
+source xsim.dir/public15_final/xsim_script.tcl
+# xsim {public15_final} -autoloadwcfg -runall
+Time resolution is 1 ps
+run -all
+STAGE RX_H checked=117 errors=0
+G row 0: 1000001111000
+G row 1: 0100111001111
+G row 2: 0010111010010
+G row 3: 0001000001000
+STAGE BUILD_G checked=52 errors=0
+ENCODE u=0000 c=0000000000000 errors=0
+ENCODE u=0001 c=0001000001000 errors=0
+ENCODE u=0010 c=0010111010010 errors=0
+ENCODE u=0011 c=0011111011010 errors=0
+ENCODE u=0100 c=0100111001111 errors=0
+ENCODE u=0101 c=0101111000111 errors=0
+ENCODE u=0110 c=0110000011101 errors=0
+ENCODE u=0111 c=0111000010101 errors=0
+ENCODE u=1000 c=1000001111000 errors=0
+ENCODE u=1001 c=1001001110000 errors=0
+ENCODE u=1010 c=1010110101010 errors=0
+ENCODE u=1011 c=1011110100010 errors=0
+ENCODE u=1100 c=1100110110111 errors=0
+ENCODE u=1101 c=1101110111111 errors=0
+ENCODE u=1110 c=1110001100101 errors=0
+ENCODE u=1111 c=1111001101101 errors=0
+STAGE WRITE_MEM checked=208 errors=0
+STAGE_CHECK_PASS H=117 G=52 words=16 syndromes=144 memory=208 output=208 cycles=701
+$finish called at time : 7010 ns : File "C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/tb_stages.sv" Line 82
+exit
+INFO: [Common 17-206] Exiting xsim at Sun Sep 27 10:05:22 2026...

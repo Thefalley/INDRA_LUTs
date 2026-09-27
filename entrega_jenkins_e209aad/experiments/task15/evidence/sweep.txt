@@ -1,0 +1,80 @@
+#-----------------------------------------------------------
+# xsim v2025.2 (64-bit)
+# SW Build 6299465 on Fri Nov 14 19:35:11 GMT 2025
+# IP Build 6300035 on Fri Nov 14 10:48:45 MST 2025
+# SharedData Build 6298862 on Thu Nov 13 04:50:51 MST 2025
+# Start of session at: Sun Sep 27 10:06:37 2026
+# Process ID         : 43380
+# Current directory  : C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/run_public
+# Command line       : xsim.exe -log general_sweep.log -mode tcl -source {xsim.dir/general15_sweep/xsim_script.tcl}
+# Log file           : C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/run_public/general_sweep.log
+# Journal file       : C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/run_public\xsim.jou
+# Running On         : 11LAP5CG60650LP
+# Platform           : Windows Server 2016 or Windows 10
+# Operating System   : 26200
+# Processor Detail   : Intel(R) Core(TM) Ultra 9 285H
+# CPU Frequency      : 3686 MHz
+# CPU Physical cores : 16
+# CPU Logical cores  : 16
+# Host memory        : 68111 MB
+# Swap memory        : 6796 MB
+# Total Virtual      : 74907 MB
+# Available Virtual  : 23533 MB
+#-----------------------------------------------------------
+source xsim.dir/general15_sweep/xsim_script.tcl
+# xsim {general15_sweep} -autoloadwcfg -runall
+Time resolution is 1 ps
+run -all
+CASE m=10 n=14 variant=0 bytes=224/224 errors=0 cycles=633
+CASE m=5 n=12 variant=0 bytes=1536/1536 errors=0 cycles=3258
+CASE m=10 n=14 variant=1 bytes=224/224 errors=0 cycles=634
+CASE m=5 n=12 variant=1 bytes=1536/1536 errors=0 cycles=3259
+CASE m=10 n=14 variant=2 bytes=224/224 errors=0 cycles=631
+CASE m=5 n=12 variant=2 bytes=1536/1536 errors=0 cycles=3257
+CASE m=2 n=7 variant=3 bytes=224/224 errors=0 cycles=497
+CASE m=2 n=8 variant=3 bytes=512/512 errors=0 cycles=1106
+CASE m=2 n=9 variant=3 bytes=1152/1152 errors=0 cycles=2451
+CASE m=2 n=10 variant=3 bytes=2560/2560 errors=0 cycles=5397
+CASE m=3 n=8 variant=3 bytes=256/256 errors=0 cycles=571
+CASE m=3 n=9 variant=3 bytes=576/576 errors=0 cycles=1249
+CASE m=3 n=10 variant=3 bytes=1280/1280 errors=0 cycles=2716
+CASE m=3 n=11 variant=3 bytes=2816/2816 errors=0 cycles=5921
+CASE m=4 n=9 variant=3 bytes=288/288 errors=0 cycles=645
+CASE m=4 n=10 variant=3 bytes=640/640 errors=0 cycles=1388
+CASE m=4 n=11 variant=3 bytes=1408/1408 errors=0 cycles=2987
+CASE m=4 n=12 variant=3 bytes=3072/3072 errors=0 cycles=6441
+CASE m=5 n=9 variant=3 bytes=144/144 errors=0 cycles=361
+CASE m=5 n=10 variant=3 bytes=320/320 errors=0 cycles=725
+CASE m=5 n=11 variant=3 bytes=704/704 errors=0 cycles=1542
+CASE m=5 n=12 variant=3 bytes=1536/1536 errors=0 cycles=3257
+CASE m=5 n=13 variant=3 bytes=3328/3328 errors=0 cycles=6971
+CASE m=6 n=10 variant=3 bytes=160/160 errors=0 cycles=405
+CASE m=6 n=11 variant=3 bytes=352/352 errors=0 cycles=806
+CASE m=6 n=12 variant=3 bytes=768/768 errors=0 cycles=1675
+CASE m=6 n=13 variant=3 bytes=1664/1664 errors=0 cycles=3529
+CASE m=6 n=14 variant=3 bytes=3584/3584 errors=0 cycles=7497
+CASE m=7 n=11 variant=3 bytes=176/176 errors=0 cycles=458
+CASE m=7 n=12 variant=3 bytes=384/384 errors=0 cycles=890
+CASE m=7 n=13 variant=3 bytes=832/832 errors=0 cycles=1820
+CASE m=7 n=14 variant=3 bytes=1792/1792 errors=0 cycles=3803
+CASE m=8 n=12 variant=3 bytes=192/192 errors=0 cycles=518
+CASE m=8 n=13 variant=3 bytes=416/416 errors=0 cycles=979
+CASE m=8 n=14 variant=3 bytes=896/896 errors=0 cycles=1973
+CASE m=8 n=15 variant=3 bytes=1920/1920 errors=0 cycles=4083
+CASE m=9 n=13 variant=3 bytes=208/208 errors=0 cycles=567
+CASE m=9 n=14 variant=3 bytes=448/448 errors=0 cycles=1071
+CASE m=9 n=15 variant=3 bytes=960/960 errors=0 cycles=2127
+CASE m=9 n=16 variant=3 bytes=2048/2048 errors=0 cycles=4366
+CASE m=10 n=14 variant=3 bytes=224/224 errors=0 cycles=627
+CASE m=10 n=15 variant=3 bytes=480/480 errors=0 cycles=1154
+CASE m=10 n=16 variant=3 bytes=1024/1024 errors=0 cycles=2281
+CASE m=10 n=17 variant=3 bytes=2176/2176 errors=0 cycles=4648
+CASE m=11 n=15 variant=3 bytes=240/240 errors=0 cycles=701
+CASE m=11 n=16 variant=3 bytes=512/512 errors=0 cycles=1247
+CASE m=11 n=17 variant=3 bytes=1088/1088 errors=0 cycles=2438
+CASE m=12 n=16 variant=3 bytes=256/256 errors=0 cycles=756
+GENERAL_SUMMARY cases=48 errors=0
+GENERAL_PASS
+$finish called at time : 1121110 ns : File "C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/tb_general.sv" Line 71
+exit
+INFO: [Common 17-206] Exiting xsim at Sun Sep 27 10:06:41 2026...

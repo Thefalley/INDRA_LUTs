@@ -1,0 +1,55 @@
+#-----------------------------------------------------------
+# xsim v2025.2 (64-bit)
+# SW Build 6299465 on Fri Nov 14 19:35:11 GMT 2025
+# IP Build 6300035 on Fri Nov 14 10:48:45 MST 2025
+# SharedData Build 6298862 on Thu Nov 13 04:50:51 MST 2025
+# Start of session at: Sun Sep 27 10:01:23 2026
+# Process ID         : 40248
+# Current directory  : C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/run_public
+# Command line       : xsim.exe -log general_baseline.log -mode tcl -source {xsim.dir/general15/xsim_script.tcl}
+# Log file           : C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/run_public/general_baseline.log
+# Journal file       : C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/run_public\xsim.jou
+# Running On         : 11LAP5CG60650LP
+# Platform           : Windows Server 2016 or Windows 10
+# Operating System   : 26200
+# Processor Detail   : Intel(R) Core(TM) Ultra 9 285H
+# CPU Frequency      : 3686 MHz
+# CPU Physical cores : 16
+# CPU Logical cores  : 16
+# Host memory        : 68111 MB
+# Swap memory        : 6796 MB
+# Total Virtual      : 74907 MB
+# Available Virtual  : 27033 MB
+#-----------------------------------------------------------
+source xsim.dir/general15/xsim_script.tcl
+# xsim {general15} -autoloadwcfg -runall
+Time resolution is 1 ps
+run -all
+CASE m=10 n=14 variant=0 bytes=224/224 errors=0 cycles=465
+CASE m=5 n=12 variant=0 bytes=1536/1536 errors=0 cycles=3201
+MISMATCH byte=32 actual=00 expected=1 last=0
+MISMATCH byte=33 actual=00 expected=1 last=0
+MISMATCH byte=34 actual=01 expected=0 last=0
+MISMATCH byte=46 actual=00 expected=1 last=0
+CASE m=10 n=14 variant=1 bytes=224/224 errors=24 cycles=465
+MISMATCH byte=19 actual=01 expected=0 last=0
+MISMATCH byte=20 actual=00 expected=1 last=0
+MISMATCH byte=21 actual=01 expected=0 last=0
+MISMATCH byte=43 actual=00 expected=1 last=0
+CASE m=5 n=12 variant=1 bytes=1536/1536 errors=192 cycles=3201
+MISMATCH byte=17 actual=01 expected=0 last=0
+MISMATCH byte=18 actual=00 expected=1 last=0
+MISMATCH byte=21 actual=00 expected=1 last=0
+MISMATCH byte=23 actual=00 expected=1 last=0
+CASE m=10 n=14 variant=2 bytes=224/224 errors=96 cycles=465
+MISMATCH byte=18 actual=01 expected=0 last=0
+MISMATCH byte=21 actual=01 expected=0 last=0
+MISMATCH byte=22 actual=00 expected=1 last=0
+MISMATCH byte=31 actual=01 expected=0 last=0
+CASE m=5 n=12 variant=2 bytes=1536/1536 errors=384 cycles=3201
+GENERAL_SUMMARY errors=696
+Fatal: GENERAL_FAIL
+Time: 118140 ns  Iteration: 0  Process: /tb_general/Initial62_8  Scope: tb_general  File: C:/project/hackthon/INDRA_LUTs_2026/tmp/task15_validation/experiments/task15/tb_general.sv Line: 65
+$finish called at time : 118140 ns
+exit
+INFO: [Common 17-206] Exiting xsim at Sun Sep 27 10:01:26 2026...
