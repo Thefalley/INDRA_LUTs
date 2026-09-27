@@ -18,77 +18,63 @@ module task_2
 );
 
     localparam logic [31:0] HEADER_Q1_15 = 32'h01007171;
-    logic [15:0] sample_mem [0:2047];
-    logic [11:0] sample_count;
-    logic [11:0] output_count;
+    // i_data0: measured signal; i_data1: temperature. Extend before shifts.
+    wire signed [31:0] measured = $signed(i_data0);
+    wire signed [31:0] temperature = $signed(i_data1);
+    logic signed [31:0] measured_x23, temperature_x80;
     logic signed [31:0] correction;
-    logic signed [15:0] corrected_sample;
-    typedef enum logic [1:0] { ST_WAIT, ST_CAPTURE, ST_HEADER, ST_OUTPUT } state_t;
-    state_t state, next_state;
+    logic valid_product, last_product, valid_correction, last_correction;
+    logic capturing, busy;
+    wire start_packet = !busy && i_valid && i_first;
+    wire accept_sample = i_valid && (capturing || start_packet);
 
-    always_comb begin
-        correction = -32'sd1599 - ($signed(i_data0) <<< 6) - ($signed(i_data0) <<< 4) +
-                     (($signed(i_data1) * 32'sd23) >>> 5);
-        if (correction > 32'sd32767)
-            corrected_sample = 16'sh7fff;
-        else if (correction < -32'sd32768)
-            corrected_sample = 16'sh8000;
-        else
-            corrected_sample = correction[15:0];
-    end
-
+    // One packet at a time, as in the original implementation. The producer
+    // must wait for o_last before starting another packet (there is no ready).
+    // The header precedes the first arithmetic result. Input gaps propagate;
+    // no frame-size buffer is required for this per-sample correction.
     always_ff @(posedge i_clk) begin
         if (i_rst) begin
-            state <= ST_WAIT;
-            sample_count <= '0;
-            output_count <= '0;
+            capturing <= 1'b0;
+            busy <= 1'b0;
+            valid_product <= 1'b0;
+            last_product <= 1'b0;
+            valid_correction <= 1'b0;
+            last_correction <= 1'b0;
+            o_valid <= 1'b0;
+            o_last <= 1'b0;
+            o_data <= '0;
         end else begin
-            state <= next_state;
-            case (state)
-                ST_WAIT: begin
-                    sample_count <= '0;
-                    output_count <= '0;
-                    if (i_valid && i_first) begin
-                        sample_mem[0] <= corrected_sample;
-                        if (!i_last)
-                            sample_count <= 12'd1;
-                    end
-                end
-                ST_CAPTURE: if (i_valid) begin
-                    sample_mem[sample_count] <= corrected_sample;
-                    if (i_last)
-                        output_count <= '0;
-                    else
-                        sample_count <= sample_count + 1'b1;
-                end
-                ST_OUTPUT: if (output_count != sample_count)
-                    output_count <= output_count + 1'b1;
-                default: begin end
-            endcase
-        end
-    end
+            valid_product <= accept_sample;
+            last_product <= accept_sample && i_last;
+            valid_correction <= valid_product;
+            last_correction <= valid_product && last_product;
 
-    always_comb begin
-        next_state = state;
-        o_valid = 1'b0;
-        o_last = 1'b0;
-        o_data = '0;
-        case (state)
-            ST_WAIT: if (i_valid && i_first) next_state = i_last ? ST_HEADER : ST_CAPTURE;
-            ST_CAPTURE: if (i_valid && i_last) next_state = ST_HEADER;
-            ST_HEADER: begin
-                o_valid = 1'b1;
-                o_data = HEADER_Q1_15;
-                next_state = ST_OUTPUT;
+            if (start_packet) busy <= 1'b1;
+            if (accept_sample) begin
+                capturing <= !i_last;
+                // Constant products implemented with adders, without DSPs.
+                measured_x23 <= (measured <<< 4) + (measured <<< 3) - measured;
+                temperature_x80 <= (temperature <<< 6) + (temperature <<< 4);
             end
-            ST_OUTPUT: begin
-                o_valid = 1'b1;
-                o_data = {{16{sample_mem[output_count][15]}}, sample_mem[output_count]};
-                o_last = (output_count == sample_count);
-                if (o_last) next_state = ST_WAIT;
+            if (valid_product)
+                correction <= -32'sd1599 - temperature_x80 + (measured_x23 >>> 5);
+
+            o_valid <= start_packet || valid_correction;
+            o_last <= valid_correction && last_correction;
+            if (start_packet) begin
+                o_data <= HEADER_Q1_15;
+            end else if (valid_correction) begin
+                if (correction > 32'sd32767)
+                    o_data <= 32'h00007fff;
+                else if (correction < -32'sd32768)
+                    o_data <= 32'hffff8000;
+                else
+                    o_data <= {{16{correction[15]}}, correction[15:0]};
+                if (last_correction) busy <= 1'b0;
+            end else begin
+                o_data <= '0;
             end
-            default: next_state = ST_WAIT;
-        endcase
+        end
     end
 
 endmodule

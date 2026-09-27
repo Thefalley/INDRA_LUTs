@@ -538,7 +538,8 @@ module wave_generator #(
         case(i_wave_shape)
             2'b01: o_data = sine_value;
             2'b10: o_data = triangle_product >> 10;
-            2'b11: o_data = i_phase[10] ? 16'd0 : 16'd32767;
+            // Rectangle starts low, then high in the second half-period.
+            2'b11: o_data = i_phase[10] ? 16'd32767 : 16'd0;
             default: o_data = '0;
         endcase
     end

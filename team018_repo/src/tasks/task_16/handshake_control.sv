@@ -5,7 +5,7 @@
 module handshake_control (
     input  logic       i_clk,
     input  logic       i_rst,
-    
+
     // Upstream AXI
     input  logic       i_valid,
     output logic       i_ready,

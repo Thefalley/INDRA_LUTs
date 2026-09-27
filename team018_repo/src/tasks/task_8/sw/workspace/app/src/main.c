@@ -57,12 +57,19 @@ static void dma_transmit(uint32_t address)
     dma_write(MM2S_DMASR, DMA_IRQ_MASK);
 }
 
-static void radix_sort_u32(volatile uint32_t *input, volatile uint32_t *scratch)
+/* Static arrays live in .bss, mapped to LMB by the official linker script.
+ * CPU-private storage: never accessed by DMA, no cache coherency assumption.
+ * Keep MMIO/DMA buffer volatile; do not make ordinary local RAM volatile.
+ */
+static uint32_t local_input[WORD_COUNT];
+static uint32_t local_scratch[WORD_COUNT];
+static uint32_t histogram[WORD_COUNT];
+
+static void radix_sort_u32(uint32_t *input, uint32_t *scratch)
 {
-    uint32_t histogram[WORD_COUNT];
-    volatile uint32_t *source = input;
-    volatile uint32_t *destination = scratch;
-    volatile uint32_t *swap;
+    uint32_t *source = input;
+    uint32_t *destination = scratch;
+    uint32_t *swap;
     uint32_t shift;
     uint32_t i;
 
@@ -98,11 +105,14 @@ static void radix_sort_u32(volatile uint32_t *input, volatile uint32_t *scratch)
 int main(void)
 {
     volatile uint32_t *const input = (volatile uint32_t *)(uintptr_t)INPUT_BUFFER;
-    volatile uint32_t *const scratch = (volatile uint32_t *)(uintptr_t)SCRATCH_BUFFER;
 
     for (;;) {
         dma_receive(INPUT_BUFFER);
-        radix_sort_u32(input, scratch);
+        for (uint32_t i = 0u; i < WORD_COUNT; ++i)
+            local_input[i] = input[i];
+        radix_sort_u32(local_input, local_scratch);
+        for (uint32_t i = 0u; i < WORD_COUNT; ++i)
+            input[i] = local_input[i];
         dma_transmit(INPUT_BUFFER);
     }
 }

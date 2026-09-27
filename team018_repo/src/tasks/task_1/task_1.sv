@@ -16,7 +16,7 @@ module task_1
 );
 
   localparam int MAX_DATA_BYTES = 4096;
-  localparam int FIRST_BUFFER_BYTES = 512;
+  localparam int FIRST_BUFFER_BYTES = 2048;
 
   typedef enum logic [3:0] {
     ST_WAIT,
@@ -28,22 +28,27 @@ module task_1
     ST_SHORT_ROT_OUT,
     ST_ROT_RIGHT_PREP,
     ST_ROT_RIGHT_PRIME,
-    ST_ROT_RIGHT_OUT
+    ST_ROT_RIGHT_OUT,
+    ST_LEFT_FLUSH_FETCH,
+    ST_SHORT_SHIFT_FETCH,
+    ST_SHORT_ROT_FETCH
   } state_t;
 
   state_t state, next_state;
 
   logic [7:0] control_1;
   logic [7:0] control_0;
-  (* ram_style = "distributed" *) logic [7:0] first_mem_a [0:FIRST_BUFFER_BYTES-1];
-  logic [7:0] first_mem_b [0:FIRST_BUFFER_BYTES-1];
+  (* ram_style = "block" *) logic [7:0] first_mem_a [0:FIRST_BUFFER_BYTES-1];
+  (* ram_style = "block" *) logic [7:0] first_mem_b [0:FIRST_BUFFER_BYTES-1];
+  logic [10:0] first_addr_a, first_addr_b;
+  logic [7:0] first_data_a, first_data_b;
   (* ram_style = "distributed" *) logic [7:0] right_mem_a [0:FIRST_BUFFER_BYTES-1];
   (* ram_style = "distributed" *) logic [7:0] right_mem_b [0:FIRST_BUFFER_BYTES-1];
   (* ram_style = "block" *) logic [7:0] rot_mem_a [0:MAX_DATA_BYTES-1];
   (* ram_style = "block" *) logic [7:0] rot_mem_b [0:MAX_DATA_BYTES-1];
   logic [11:0] read_index;
   logic [11:0] output_index;
-  logic [9:0] flush_index;
+  logic [11:0] flush_index;
   logic [12:0] data_count;
   logic [7:0] last_data;
   logic [11:0] rot_a;
@@ -55,14 +60,17 @@ module task_1
   logic [7:0] rot_data_a;
   logic [7:0] rot_data_b;
 
-  wire [11:0] shift_value = {control_1[3:0], control_0};
-  wire [8:0] shift_bytes = shift_value[11:3];
+  // Text specification in 01_Shifter.pdf: bit 7 rotate, bit 6 right,
+  // bits 5:0 plus ctrl0 form the 14-bit shift. The PDF's 0x9003 example
+  // rotates 4099 bits, equivalent to 3 bits for its 32-bit payload.
+  wire [13:0] shift_value = {control_1[5:0], control_0};
+  wire [10:0] shift_bytes = shift_value[13:3];
   wire shift_partial = |shift_value[2:0];
-  wire [9:0] lookahead_bytes = {1'b0, shift_bytes} + shift_partial;
-  wire is_shift = (control_1[7:6] == 2'b01);
-  wire is_rotate = (control_1[7:6] == 2'b10);
-  wire is_left = (control_1[5:4] == 2'b01);
-  wire is_right = (control_1[5:4] == 2'b10);
+  wire [11:0] lookahead_bytes = {1'b0, shift_bytes} + shift_partial;
+  wire is_shift = !control_1[7];
+  wire is_rotate = control_1[7];
+  wire is_left = !control_1[6];
+  wire is_right = control_1[6];
 
   function automatic logic [7:0] get_left_stream_byte(input logic [7:0] current_data);
     begin
@@ -84,18 +92,18 @@ module task_1
           if (shift_bytes == 0)
             value = current_data;
           else
-            value = right_mem_a[current_index[8:0] - shift_bytes];
+            value = right_mem_a[current_index[10:0] - shift_bytes];
         end else if (current_index == shift_bytes) begin
           if (shift_bytes == 0)
             value = current_data >> shift_value[2:0];
           else
-            value = right_mem_a[current_index[8:0] - shift_bytes] >> shift_value[2:0];
+            value = right_mem_a[current_index[10:0] - shift_bytes] >> shift_value[2:0];
         end else if (shift_bytes == 0) begin
-          value = (right_mem_a[current_index[8:0] - 1'b1] << (8 - shift_value[2:0])) |
+          value = (right_mem_a[current_index[10:0] - 1'b1] << (8 - shift_value[2:0])) |
                   (current_data >> shift_value[2:0]);
         end else begin
-          value = (right_mem_a[current_index[8:0] - shift_bytes - 1'b1] << (8 - shift_value[2:0])) |
-                  (right_mem_b[current_index[8:0] - shift_bytes] >> shift_value[2:0]);
+          value = (right_mem_a[current_index[10:0] - shift_bytes - 1'b1] << (8 - shift_value[2:0])) |
+                  (right_mem_b[current_index[10:0] - shift_bytes] >> shift_value[2:0]);
         end
       end
       get_right_stream_byte = value;
@@ -109,22 +117,22 @@ module task_1
       if (source_index >= data_count)
         get_short_shift_byte = '0;
       else if (!shift_partial)
-        get_short_shift_byte = first_mem_a[source_index[8:0]];
+        get_short_shift_byte = first_data_a;
       else if (source_index == data_count - 1'b1)
-        get_short_shift_byte = first_mem_a[source_index[8:0]] << shift_value[2:0];
+        get_short_shift_byte = first_data_a << shift_value[2:0];
       else
-        get_short_shift_byte = (first_mem_a[source_index[8:0]] << shift_value[2:0]) |
-                               (first_mem_b[source_index[8:0] + 1'b1] >> (8 - shift_value[2:0]));
+        get_short_shift_byte = (first_data_a << shift_value[2:0]) |
+                               (first_data_b >> (8 - shift_value[2:0]));
     end
   endfunction
 
   function automatic logic [7:0] get_short_rotate_left_byte;
     begin
       if (rot_bits == 0)
-        get_short_rotate_left_byte = first_mem_a[rot_a[8:0]];
+        get_short_rotate_left_byte = first_data_a;
       else
-        get_short_rotate_left_byte = (first_mem_a[rot_a[8:0]] << rot_bits) |
-                                     (first_mem_b[rot_b[8:0]] >> (8 - rot_bits));
+        get_short_rotate_left_byte = (first_data_a << rot_bits) |
+                                     (first_data_b >> (8 - rot_bits));
     end
   endfunction
 
@@ -138,7 +146,7 @@ module task_1
     end
   endfunction
 
-  function automatic logic [7:0] get_left_flush_byte(input logic [9:0] index);
+  function automatic logic [7:0] get_left_flush_byte(input logic [11:0] index);
     logic [7:0] value;
     begin
       value = '0;
@@ -146,17 +154,38 @@ module task_1
         if (shift_partial && index == 0)
           value = last_data << shift_value[2:0];
       end else if (!shift_partial) begin
-        value = first_mem_a[index[8:0]];
+        value = first_data_a;
       end else if (index == 0) begin
         value = (last_data << shift_value[2:0]) |
-                (first_mem_b[0] >> (8 - shift_value[2:0]));
+                (first_data_b >> (8 - shift_value[2:0]));
       end else begin
-        value = (first_mem_a[index[8:0] - 1'b1] << shift_value[2:0]) |
-                (first_mem_b[index[8:0]] >> (8 - shift_value[2:0]));
+        value = (first_data_a << shift_value[2:0]) |
+                (first_data_b >> (8 - shift_value[2:0]));
       end
       get_left_flush_byte = value;
     end
   endfunction
+
+  always_comb begin
+    first_addr_a = flush_index[10:0] - (shift_partial ? 11'd1 : 11'd0);
+    first_addr_b = flush_index[10:0];
+    if (state == ST_SHORT_SHIFT_FETCH || state == ST_SHORT_SHIFT_OUT) begin
+      first_addr_a = output_index[10:0] + shift_bytes;
+      first_addr_b = output_index[10:0] + shift_bytes + 11'd1;
+    end else if (state == ST_SHORT_ROT_FETCH || state == ST_SHORT_ROT_OUT) begin
+      first_addr_a = rot_a[10:0];
+      first_addr_b = rot_b[10:0];
+    end
+  end
+
+  always_ff @(posedge i_clk) begin
+    first_data_a <= first_mem_a[first_addr_a];
+    first_data_b <= first_mem_b[first_addr_b];
+    if (!i_rst && state == ST_STREAM && i_valid && read_index < lookahead_bytes) begin
+      first_mem_a[read_index[10:0]] <= i_data;
+      first_mem_b[read_index[10:0]] <= i_data;
+    end
+  end
 
   always_ff @(posedge i_clk) begin
     if (i_rst)
@@ -167,8 +196,8 @@ module task_1
 
   always_ff @(posedge i_clk) begin
     if (state == ST_STREAM && i_valid) begin
-      right_mem_a[read_index[8:0]] <= i_data;
-      right_mem_b[read_index[8:0]] <= i_data;
+      right_mem_a[read_index[10:0]] <= i_data;
+      right_mem_b[read_index[10:0]] <= i_data;
       rot_mem_a[read_index] <= i_data;
       rot_mem_b[read_index] <= i_data;
     end
@@ -210,15 +239,11 @@ module task_1
         ST_STREAM: begin
           if (i_valid) begin
             last_data <= i_data;
-            if (read_index < lookahead_bytes) begin
-              first_mem_a[read_index[8:0]] <= i_data;
-              first_mem_b[read_index[8:0]] <= i_data;
-            end
             if (i_last) begin
               data_count <= read_index + 13'd1;
               output_index <= '0;
               flush_index <= '0;
-              remaining_shift <= {4'b0, shift_value};
+              remaining_shift <= {2'b0, shift_value};
             end else begin
               read_index <= read_index + 1'b1;
             end
@@ -299,6 +324,8 @@ module task_1
           end
         end
 
+        ST_LEFT_FLUSH_FETCH, ST_SHORT_SHIFT_FETCH, ST_SHORT_ROT_FETCH: begin end
+
         default: begin
           read_index <= '0;
           output_index <= '0;
@@ -345,12 +372,12 @@ module task_1
             end else if ((is_shift || is_rotate) && is_left) begin
               if (read_index < lookahead_bytes) begin
                 if (is_shift)
-                  next_state = ST_SHORT_SHIFT_OUT;
+                  next_state = ST_SHORT_SHIFT_FETCH;
                 else
                   next_state = ST_SHORT_ROT_PREP;
               end
               else if (lookahead_bytes != 0)
-                next_state = ST_LEFT_FLUSH;
+                next_state = ST_LEFT_FLUSH_FETCH;
               else
                 next_state = ST_WAIT;
             end else begin
@@ -366,6 +393,8 @@ module task_1
         o_last = (flush_index == lookahead_bytes - 1'b1);
         if (o_last)
           next_state = ST_WAIT;
+        else
+          next_state = ST_LEFT_FLUSH_FETCH;
       end
 
       ST_SHORT_SHIFT_OUT: begin
@@ -374,11 +403,13 @@ module task_1
         o_last = (output_index == data_count - 1'b1);
         if (o_last)
           next_state = ST_WAIT;
+        else
+          next_state = ST_SHORT_SHIFT_FETCH;
       end
 
       ST_SHORT_ROT_PREP: begin
         if (remaining_shift < {data_count, 3'b000})
-          next_state = ST_SHORT_ROT_OUT;
+          next_state = ST_SHORT_ROT_FETCH;
       end
 
       ST_SHORT_ROT_OUT: begin
@@ -387,7 +418,13 @@ module task_1
         o_last = (output_index == data_count - 1'b1);
         if (o_last)
           next_state = ST_WAIT;
+        else
+          next_state = ST_SHORT_ROT_FETCH;
       end
+
+      ST_LEFT_FLUSH_FETCH: next_state = ST_LEFT_FLUSH;
+      ST_SHORT_SHIFT_FETCH: next_state = ST_SHORT_SHIFT_OUT;
+      ST_SHORT_ROT_FETCH: next_state = ST_SHORT_ROT_OUT;
 
       ST_ROT_RIGHT_PREP: begin
         if (remaining_shift < {data_count, 3'b000})

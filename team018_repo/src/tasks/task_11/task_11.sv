@@ -32,6 +32,9 @@ module task_11 #(
     logic [11:0] repair_addr;
     logic [14:0] repair_value;
     logic repair_valid;
+    logic mem_we;
+    logic [11:0] mem_waddr;
+    logic [7:0] mem_wdata;
 
     always_comb begin
         repair_row = column_pass ? col_xor[line_index[5:0]] : line_index[5:0];
@@ -45,16 +48,28 @@ module task_11 #(
     end
 
     // One synchronous read port and one synchronous write port.
+    always_comb begin
+        mem_we = 1'b0;
+        mem_waddr = 0;
+        mem_wdata = i_data[7:0];
+        if (!i_rst) begin
+            if (state == IDLE && i_valid && i_first) begin
+                mem_we = 1'b1;
+                mem_waddr = 0;
+            end else if (state == RX && i_valid) begin
+                mem_we = 1'b1;
+                mem_waddr = total_count[11:0];
+            end else if (repair_valid) begin
+                mem_we = 1'b1;
+                mem_waddr = repair_addr;
+                mem_wdata = repair_value[7:0];
+            end
+        end
+    end
+
     always_ff @(posedge i_clk) begin
         rd_data <= mem[rd_addr];
-        if (!i_rst) begin
-            if (state == IDLE && i_valid && i_first)
-                mem[0] <= i_data[7:0];
-            else if (state == RX && i_valid)
-                mem[total_count[11:0]] <= i_data[7:0];
-            else if (repair_valid)
-                mem[repair_addr] <= repair_value[7:0];
-        end
+        if (mem_we) mem[mem_waddr] <= mem_wdata;
     end
 
     always_ff @(posedge i_clk) begin

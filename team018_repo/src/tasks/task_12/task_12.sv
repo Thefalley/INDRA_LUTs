@@ -28,8 +28,13 @@ module task_12 #(
     logic [6:0] out_ptr;
 
     // PN Stack ajustado
-    logic signed [31:0] stack [0:2047];
+    (* ram_style = "block" *) logic signed [31:0] stack [0:2047];
     logic [11:0] sp;
+    logic [7:0] input_char, right_char;
+    logic signed [31:0] stack_a, stack_b;
+    logic [10:0] stack_addr_a, stack_addr_b, stack_waddr;
+    logic signed [31:0] stack_wdata;
+    logic stack_we;
 
     // Estados FSM
     typedef enum logic [2:0] {
@@ -38,7 +43,9 @@ module task_12 #(
         ST_EVAL_STEP,
         ST_FORMAT_INIT,
         ST_FORMAT_STEP,
-        ST_TX
+        ST_TX,
+        ST_FETCH,
+        ST_FORMAT_WAIT
     } state_t;
 
     state_t state;
@@ -73,6 +80,53 @@ module task_12 #(
         return (c == " " || c == 8'h09 || c == 8'h0D || c == 8'h0A);
     endfunction
 
+    always_comb begin
+        stack_addr_a = (state == ST_FORMAT_WAIT || state == ST_FORMAT_INIT) ? 11'd0 : sp - 1'b1;
+        stack_addr_b = sp - 2'd2;
+        op1 = stack_a;
+        op2 = stack_b;
+        case (input_char)
+            "+": calc_result = op1 + op2;
+            "-": calc_result = op1 - op2;
+            "*": calc_result = op1 * op2;
+            default: calc_result = 0;
+        endcase
+        curr_val = get_roman_value(input_char);
+        next_val = get_roman_value(right_char);
+        if (idx < in_count - 1 && curr_val < next_val) curr_val = -curr_val;
+        stack_we = 1'b0;
+        stack_waddr = 0;
+        stack_wdata = 0;
+        if (!i_rst && state == ST_EVAL_STEP && idx >= 0 && !eval_error) begin
+            if (is_operator(input_char)) begin
+                if (sp >= 2 && calc_result >= 1 && calc_result <= 64'sd399999) begin
+                    stack_we = 1'b1;
+                    stack_waddr = sp - 2'd2;
+                    stack_wdata = calc_result[31:0];
+                end
+            end else if (!is_space(input_char) && get_roman_value(input_char) != 0) begin
+                stack_we = 1'b1;
+                if (sp > 0 && idx < in_count - 1 && !is_space(right_char) && !is_operator(right_char)) begin
+                    stack_waddr = sp - 1'b1;
+                    stack_wdata = stack_a + curr_val;
+                end else begin
+                    stack_waddr = sp[10:0];
+                    stack_wdata = curr_val;
+                    if (sp == 2048) stack_we = 1'b0;
+                end
+            end
+        end
+    end
+
+    always_ff @(posedge i_clk) begin
+        input_char <= in_buffer[idx[11:0]];
+        if (!i_rst && i_valid && ((state == ST_IDLE && i_first) || state == ST_RX))
+            in_buffer[(state == ST_IDLE) ? 12'd0 : in_count[11:0]] <= i_data;
+        stack_a <= stack[stack_addr_a];
+        stack_b <= stack[stack_addr_b];
+        if (stack_we) stack[stack_waddr] <= stack_wdata;
+    end
+
     always_ff @(posedge i_clk) begin
         if (i_rst) begin
             state      <= ST_IDLE;
@@ -86,6 +140,7 @@ module task_12 #(
             sp         <= '0;
             idx        <= '0;
             res        <= '0;
+            right_char <= 0;
         end else begin
             case (state)
                 ST_IDLE: begin
@@ -94,13 +149,13 @@ module task_12 #(
                     in_count   <= '0;
                     eval_error <= 1'b0;
                     sp         <= '0;
+                    right_char <= 0;
 
                     if (i_valid && i_first) begin
-                        in_buffer[0] <= i_data;
                         in_count     <= 13'd1;
                         if (i_last) begin
                             idx   <= 13'd0;
-                            state <= ST_EVAL_STEP;
+                            state <= ST_FETCH;
                         end else begin
                             state <= ST_RX;
                         end
@@ -109,72 +164,56 @@ module task_12 #(
 
                 ST_RX: begin
                     if (i_valid) begin
-                        in_buffer[in_count] <= i_data;
                         in_count            <= in_count + 1'b1;
                         if (i_last) begin
                             idx   <= in_count;
-                            state <= ST_EVAL_STEP;
+                            state <= ST_FETCH;
                         end
                     end
                 end
 
+                ST_FETCH: state <= ST_EVAL_STEP;
+                ST_FORMAT_WAIT: state <= ST_FORMAT_INIT;
+
                 ST_EVAL_STEP: begin
                     if (idx >= 0 && !eval_error) begin
-                        if (is_space(in_buffer[idx])) begin
+                        right_char <= input_char;
+                        state <= ST_FETCH;
+                        if (is_space(input_char)) begin
                             idx <= idx - 13'sd1;
                         end
-                        else if (is_operator(in_buffer[idx])) begin
+                        else if (is_operator(input_char)) begin
                             if (sp < 2) begin
                                 eval_error <= 1'b1;
                             end else begin
-                                op1 = stack[sp-1];
-                                op2 = stack[sp-2];
                                 sp <= sp - 1'b1;
-
-                                case (in_buffer[idx])
-                                    "+": calc_result = op1 + op2;
-                                    "-": calc_result = op1 - op2;
-                                    "*": calc_result = op1 * op2;
-                                    default: calc_result = 0;
-                                endcase
 
                                 if (calc_result < 1 || calc_result > 64'sd399999) begin
                                     eval_error <= 1'b1;
-                                end else begin
-                                    stack[sp-2] <= calc_result;
                                 end
                             end
                             idx <= idx - 13'sd1;
                         end
                         else begin
-                            curr_val = get_roman_value(in_buffer[idx]);
                             if (curr_val == 0) begin
                                 eval_error <= 1'b1;
                             end else begin
-                                if (idx < in_count - 1) begin
-                                    next_val = get_roman_value(in_buffer[idx+1]);
-                                    if (curr_val < next_val)
-                                        curr_val = -curr_val;
-                                end
-
-                                if (sp > 0 && idx < in_count - 1 && !is_space(in_buffer[idx+1]) && !is_operator(in_buffer[idx+1])) begin
-                                    stack[sp-1] <= stack[sp-1] + curr_val;
-                                end else begin
-                                    stack[sp] <= curr_val;
-                                    sp        <= sp + 1'b1;
+                                if (!(sp > 0 && idx < in_count - 1 && !is_space(right_char) && !is_operator(right_char))) begin
+                                    if (sp == 2048) eval_error <= 1'b1;
+                                    else sp <= sp + 1'b1;
                                 end
                             end
                             idx <= idx - 13'sd1;
                         end
                     end else begin
                         if (sp != 1) eval_error <= 1'b1;
-                        state <= ST_FORMAT_INIT;
+                        state <= ST_FORMAT_WAIT;
                     end
                 end
 
                 ST_FORMAT_INIT: begin
                     out_len <= '0;
-                    if (eval_error || stack[0] < 1 || stack[0] > 399999) begin
+                    if (eval_error || stack_a < 1 || stack_a > 399999) begin
                         out_buffer[0] <= "e";
                         out_buffer[1] <= "r";
                         out_buffer[2] <= "r";
@@ -184,7 +223,7 @@ module task_12 #(
                         out_ptr       <= '0;
                         state         <= ST_TX;
                     end else begin
-                        res   <= stack[0];
+                        res   <= stack_a;
                         state <= ST_FORMAT_STEP;
                     end
                 end

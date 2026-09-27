@@ -1,82 +1,60 @@
-`timescale 1ns / 1ps
-// ==========================================
-// Módulo CORDIC Vectorial en Q20.12
-// Calcula: angle = atan2(y, x) y radius = sqrt(x^2 + y^2)
-// ==========================================
-module cordic_atan2 #(
-    parameter int DATA_WIDTH = 32,
-    parameter int FRAC_BITS  = 12
-)(
-    input  wire                          clk,
-    input  wire                          rst,
-    input  wire                          start,
-    input  wire signed [DATA_WIDTH-1:0]  x_in,
-    input  wire signed [DATA_WIDTH-1:0]  y_in,
-    output logic signed [DATA_WIDTH-1:0] angle_out,
-    output logic signed [DATA_WIDTH-1:0] radius_out,
-    output logic                         done
+`timescale 1ns/1ps
+// Experimental only: input and radius Q12, XY internal Q32, angle Q30 radians.
+// Separate explicit output in Q12 degrees. Not a robot IK solver.
+module cordic_precise #(parameter integer ITERATIONS=24)(
+ input wire clk,rst,start,
+ input wire signed [31:0] x_in,y_in,
+ output logic signed [47:0] angle_rad_q30,
+ output logic signed [31:0] angle_deg_q12,radius_q12,
+ output logic done
 );
-
-    // Tabla LUT de atan(2^-i) escalada en Q20.12 (rad * 4096)
-    localparam signed [31:0] ATAN_LUT [0:15] = '{
-        32'sd3217, 32'sd1899, 32'sd1003, 32'sd510,
-        32'sd256,  32'sd128,  32'sd64,   32'sd32,
-        32'sd16,   32'sd8,    32'sd4,    32'sd2,
-        32'sd1,    32'sd0,    32'sd0,    32'sd0
-    };
-
-    localparam signed [31:0] PI_Q20_12 = 32'sd12868; // pi * 4096
-
-    logic [4:0] step;
-    logic signed [DATA_WIDTH-1:0] x, y, z;
-
-    always_ff @(posedge clk) begin
-        if (rst) begin
-            step       <= '0;
-            done       <= 1'b0;
-            angle_out  <= '0;
-            radius_out <= '0;
-            x          <= '0;
-            y          <= '0;
-            z          <= '0;
-        end else if (start) begin
-            step <= '0;
-            done <= 1'b0;
-            if (x_in >= 0) begin
-                x <= x_in;
-                y <= y_in;
-                z <= 32'sd0;
-            end else begin
-                x <= -x_in;
-                y <= -y_in;
-                z <= (y_in >= 0) ? PI_Q20_12 : -PI_Q20_12;
-            end
-        end else if (step < 16 && !done) begin
-            automatic logic signed [DATA_WIDTH-1:0] x_shift = x >>> step;
-            automatic logic signed [DATA_WIDTH-1:0] y_shift = y >>> step;
-
-            if (y < 0) begin
-                x <= x - y_shift;
-                y <= y + x_shift;
-                z <= z - ATAN_LUT[step];
-            end else begin
-                x <= x + y_shift;
-                y <= y - x_shift;
-                z <= z + ATAN_LUT[step];
-            end
-            step <= step + 1'b1;
-        end else if (step == 16) begin
-            angle_out  <= z;
-            // Ajuste por la ganancia CORDIC K ~ 1.64676 (factor 0.607252 en Q20.12 = 2487)
-            radius_out <= (x * 32'sd2487) >>> FRAC_BITS;
-            done       <= 1'b1;
-        end
+ localparam logic signed [47:0] PI_Q30=48'sd3373259426;
+ localparam logic signed [47:0] ATAN_Q30[0:23]='{
+ 48'sd843314857,48'sd497837829,48'sd263043837,48'sd133525159,
+ 48'sd67021687,48'sd33543516,48'sd16775851,48'sd8388437,
+ 48'sd4194283,48'sd2097149,48'sd1048576,48'sd524288,
+ 48'sd262144,48'sd131072,48'sd65536,48'sd32768,
+ 48'sd16384,48'sd8192,48'sd4096,48'sd2048,
+ 48'sd1024,48'sd512,48'sd256,48'sd128};
+ logic signed [63:0] x,y;
+ logic signed [47:0] z;
+ wire signed [63:0] input_x_ext={{32{x_in[31]}},x_in};
+ wire signed [63:0] input_y_ext={{32{y_in[31]}},y_in};
+ wire signed [95:0] radius_product=x*32'sd652032874;
+ wire signed [79:0] degree_product=z*32'sd60078979;
+ logic busy,zero_vector;
+ integer step;
+ always_ff @(posedge clk) begin
+  if(rst) begin
+   busy<=0;done<=0;step<=0;x<=0;y<=0;z<=0;zero_vector<=0;
+   angle_rad_q30<=0;angle_deg_q12<=0;radius_q12<=0;
+  end else begin
+   done<=0;
+   if(start && !busy) begin
+    busy<=1;step<=0;zero_vector<=(x_in==0 && y_in==0);
+    if(x_in<0) begin
+     x<=-(input_x_ext<<<20);y<=-(input_y_ext<<<20);
+     z<=(y_in>=0)?PI_Q30:-PI_Q30;
+    end else begin x<=input_x_ext<<<20;y<=input_y_ext<<<20;z<=0;end
+   end else if(busy && step<ITERATIONS) begin
+    if(y<0) begin x<=x-(y>>>step);y<=y+(x>>>step);z<=z-ATAN_Q30[step];end
+    else begin x<=x+(y>>>step);y<=y-(x>>>step);z<=z+ATAN_Q30[step];end
+    step<=step+1;
+   end else if(busy) begin
+    // Round magnitudes symmetrically. Conversion: Q30*Q20 -> degrees Q12.
+    angle_rad_q30<=zero_vector?48'sd0:z;
+    if(zero_vector) begin angle_deg_q12<=0;radius_q12<=0;end
+    else begin
+     if(degree_product>=0) angle_deg_q12<=(degree_product+(80'sd1<<<37))>>>38;
+     else angle_deg_q12<=-(((-degree_product)+(80'sd1<<<37))>>>38);
+     radius_q12<=(radius_product+(96'sd1<<<49))>>>50;
     end
+    busy<=0;done<=1;
+   end
+  end
+ end
 endmodule
 
-// ==========================================
-// Módulo Principal: Task 7
-// ==========================================
 module task_7 #(
     parameter int TASK_INPUT_WIDTH  = 32,
     parameter int TASK_OUTPUT_WIDTH = 32
@@ -125,28 +103,27 @@ module task_7 #(
     localparam signed [31:0] D4_Q20_12 = 32'sd713;   // d4 = 0.17415
     localparam signed [31:0] D5_Q20_12 = 32'sd491;   // d5 = 0.11985
 
-    // Señales para instancia CORDIC
+    // SeÃƒÂ±ales para instancia CORDIC
     logic cordic_start;
     logic cordic_done;
     logic signed [31:0] cordic_x, cordic_y, cordic_angle, cordic_radius;
 
-    cordic_atan2 #(
-        .DATA_WIDTH(32),
-        .FRAC_BITS(12)
-    ) u_cordic (
+    cordic_precise #(.ITERATIONS(24)) u_cordic (
         .clk(i_clk),
         .rst(i_rst),
         .start(cordic_start),
         .x_in(cordic_x),
         .y_in(cordic_y),
-        .angle_out(cordic_angle),
-        .radius_out(cordic_radius),
+        .angle_rad_q30(),
+        .angle_deg_q12(cordic_angle),
+        .radius_q12(cordic_radius),
         .done(cordic_done)
     );
 
     // Sub-estados para resolver la IK punto a punto con CORDIC
     typedef enum logic [2:0] {
         IK_INIT_PHI1,
+        IK_START_PHI1,
         IK_WAIT_PHI1,
         IK_COMPUTE_ARM,
         IK_NEXT_POINT
@@ -162,7 +139,7 @@ module task_7 #(
             calc_idx     <= 0;
             tx_word_cnt  <= 0;
             o_valid      <= 1'b0;
-            o_last       <= 1 meb0;
+            o_last       <= 1'b0;
             o_data       <= '0;
             cordic_start <= 1'b0;
             cordic_x     <= '0;
@@ -219,6 +196,11 @@ module task_7 #(
                             cordic_x     <= x_pos[calc_idx];
                             cordic_y     <= y_pos[calc_idx];
                             cordic_start <= 1'b1;
+                            ik_state     <= IK_START_PHI1;
+                        end
+
+                        IK_START_PHI1: begin
+                            cordic_start <= 1'b0;
                             ik_state     <= IK_WAIT_PHI1;
                         end
 
@@ -237,7 +219,7 @@ module task_7 #(
                             z_prime = z_pos[calc_idx] - D0_Q20_12;
                             r_proj  = cordic_radius;
 
-                            // Geometría analítica en Q20.12
+                            // GeometrÃƒÂ­a analÃƒÂ­tica en Q20.12
                             phi2_out[calc_idx] <= z_prime - A2_Q20_12;
                             phi3_out[calc_idx] <= r_proj + A3_Q20_12;
                             phi4_out[calc_idx] <= r33_val[calc_idx] - D4_Q20_12 - D5_Q20_12;
