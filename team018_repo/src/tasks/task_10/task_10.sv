@@ -1,4 +1,5 @@
 `timescale 1ns / 1ps
+
 // =============================================================================
 // task_10  --  Memory-Mapped Device Controller
 // =============================================================================
@@ -22,16 +23,15 @@ module task10_regfile #(
 
   always_ff @(posedge clk) begin
     if (rst) begin
-      for (int i = 0; i < N; i++) mem[i] <= '0;
-    end else begin
-      // *** TODO A *** synchronous write
-      if (we) begin
-        mem[waddr] <= wdata;
+      for (int i = 0; i < N; i++) begin
+        mem[i] <= '0;
       end
+    end else if (we) begin
+      mem[waddr] <= wdata;
     end
   end
 
-  // Combinational read -- provided.
+  // Lectura combinacional directa
   assign rdata = mem[raddr];
 endmodule
 
@@ -39,7 +39,9 @@ endmodule
 // -----------------------------------------------------------------------------
 // task10_shift_reg_in : serial-in / parallel-out shift register.
 // -----------------------------------------------------------------------------
-module task10_shift_reg_in #(parameter int WIDTH = 16)(
+module task10_shift_reg_in #(
+    parameter int WIDTH = 16
+)(
     input  logic             clk,
     input  logic             rst,
     input  logic             shift_en,
@@ -51,12 +53,9 @@ module task10_shift_reg_in #(parameter int WIDTH = 16)(
     if (rst) begin
       parallel_out   <= '0;
       any_shift_done <= 1'b0;
-    end else begin
-      // *** TODO B *** 1-cycle shift
-      if (shift_en) begin
-        parallel_out   <= {parallel_out[WIDTH-2:0], serial_bit};
-        any_shift_done <= 1'b1;
-      end
+    end else if (shift_en) begin
+      parallel_out   <= {parallel_out[WIDTH-2:0], serial_bit};
+      any_shift_done <= 1'b1;
     end
   end
 endmodule
@@ -65,7 +64,9 @@ endmodule
 // -----------------------------------------------------------------------------
 // task10_latch_reg : parallel-load / parallel-read latch (for serial-out).
 // -----------------------------------------------------------------------------
-module task10_latch_reg #(parameter int WIDTH = 16)(
+module task10_latch_reg #(
+    parameter int WIDTH = 16
+)(
     input  logic             clk,
     input  logic             rst,
     input  logic             we,
@@ -73,12 +74,10 @@ module task10_latch_reg #(parameter int WIDTH = 16)(
     output logic [WIDTH-1:0] rdata
 );
   always_ff @(posedge clk) begin
-    if (rst)        rdata <= '0;
-    else begin
-      // *** TODO C *** parallel load
-      if (we) begin
-        rdata <= wdata;
-      end
+    if (rst) begin
+      rdata <= '0;
+    end else if (we) begin
+      rdata <= wdata;
     end
   end
 endmodule
@@ -87,7 +86,9 @@ endmodule
 // -----------------------------------------------------------------------------
 // task10_timer : 16-bit free-running timer.
 // -----------------------------------------------------------------------------
-module task10_timer #(parameter int WIDTH = 16)(
+module task10_timer #(
+    parameter int WIDTH = 16
+)(
     input  logic             clk,
     input  logic             rst,
     input  logic             load,
@@ -106,10 +107,9 @@ module task10_timer #(parameter int WIDTH = 16)(
       target_out  <= {WIDTH{1'b1}};
       en          <= 1'b0;
       fire        <= 1'b0;
-      match_latch <= 1'b0;
+      match_latch <= 1 me;
     end else begin
-      // *** TODO D *** timer behaviour
-      fire <= 1'b0; // Default 1-cycle pulse behavior
+      fire <= 1'b0; // Genera pulso de 1 ciclo
 
       if (set_target) begin
         target_out <= target_in;
@@ -139,45 +139,45 @@ module task_10 #(
     parameter int TASK_INPUT_WIDTH  = 16,
     parameter int TASK_OUTPUT_WIDTH = 16
 )(
-    input  wire                          i_clk,
-    input  wire                          i_rst,
+    input  wire                         i_clk,
+    input  wire                         i_rst,
 
-    input  wire                          i_valid,
-    input  wire                          i_first,
-    input  wire                          i_last,
-    input  wire  [TASK_INPUT_WIDTH-1:0]  i_data,
+    input  wire                         i_valid,
+    input  wire                         i_first,
+    input  wire                         i_last,
+    input  wire  [TASK_INPUT_WIDTH-1:0] i_data,
 
-    output logic                         o_valid,
-    output logic                         o_last,
+    output logic                        o_valid,
+    output logic                        o_last,
     output logic [TASK_OUTPUT_WIDTH-1:0] o_data
 );
 
-  // ---------- opcodes ----------
+  // ---------- Opcodes ----------
   localparam logic [1:0] OP_NOP    = 2'b00;
   localparam logic [1:0] OP_WRITE  = 2'b01;
   localparam logic [1:0] OP_READ   = 2'b10;
   localparam logic [1:0] OP_OUTPUT = 2'b11;
 
-  // ---------- decode current sample ----------
+  // ---------- Decodificación ----------
   wire [1:0] cmd_op   = i_data[15:14];
   wire [3:0] cmd_addr = i_data[9:6];
 
-  // ---------- FSM state ----------
+  // ---------- FSM ----------
   typedef enum logic [0:0] { S_CMD, S_WDATA } state_t;
-  state_t      state, state_n;
-  logic [3:0]  pending_addr, pending_addr_n;
+  state_t     state, state_n;
+  logic [3:0] pending_addr, pending_addr_n;
 
-  // ---------- combinational strobes to sub-modules ----------
-  logic        rfa_we, rfb_we;
-  logic        serin_shift;
-  logic        serout_we;
-  logic        timer_load, timer_set_target;
+  // ---------- Señales de Control ----------
+  logic rfa_we, rfb_we;
+  logic serin_shift;
+  logic serout_we;
+  logic timer_load, timer_set_target;
 
-  // ---------- registered outputs (next-state inputs) ----------
+  // ---------- Salidas Registradas (Latencia 1 Ciclo) ----------
   logic        o_valid_n, o_last_n;
   logic [15:0] o_data_n;
 
-  // ---------- sub-module outputs ----------
+  // ---------- Conexiones de Submódulos ----------
   logic [15:0] rfa_rdata, rfb_rdata;
   logic [15:0] serin_par;
   logic        serin_done;
@@ -185,7 +185,7 @@ module task_10 #(
   logic [15:0] tmr_count, tmr_target;
   logic        tmr_en, tmr_fire, tmr_match;
 
-  // ---------- hidden-addr capture (triggered by timer fire) ----------------
+  // ---------- Capture de Dirección Oculta por Timer ----------
   logic [15:0] hidden_addr;
   logic        secret_rdy;
 
@@ -199,7 +199,7 @@ module task_10 #(
     end
   end
 
-  // ---------- sub-module instances ----------------------------------------
+  // ---------- Sub-módulos ----------
   task10_regfile #(.N(4), .WIDTH(16)) u_rf_a (
       .clk   (i_clk),
       .rst   (i_rst),
@@ -251,26 +251,24 @@ module task_10 #(
       .match_latch (tmr_match)
   );
 
-  // ---------- combinational read mux --------------------------------------
-  // *** TODO E ***
+  // ---------- Multiplexor Lectura de Bus ----------
   function automatic logic [15:0] bus_read(input logic [3:0] a);
     logic [15:0] v;
     case (a)
       4'h0, 4'h1, 4'h2, 4'h3: v = rfa_rdata;
       4'h4, 4'h5, 4'h6, 4'h7: v = rfb_rdata;
-      4'h8:                  v = serin_par;
-      4'h9:                  v = serout_par;
-      4'hA:                  v = tmr_count;
-      4'hB:                  v = tmr_target;
-      4'hC:                  v = {8'h0, hidden_addr[3:0], serin_done, secret_rdy, tmr_match, tmr_en};
-      default:               v = 16'h0;
+      4'h8:                   v = serin_par;
+      4'h9:                   v = serout_par;
+      4'hA:                   v = tmr_count;
+      4'hB:                   v = tmr_target;
+      4'hC:                   v = {8'h0, hidden_addr[3:0], serin_done, secret_rdy, tmr_match, tmr_en};
+      default:                v = 16'h0;
     endcase
     return v;
   endfunction
 
-  // ---------- Mealy FSM : combinational next-state + write strobes --------
+  // ---------- FSM Mealy Combinacional ----------
   always_comb begin
-    // Default assignments
     state_n          = state;
     pending_addr_n   = pending_addr;
     rfa_we           = 1'b0;
@@ -284,7 +282,7 @@ module task_10 #(
     o_last_n         = 1'b0;
     o_data_n         = o_data;
 
-    unique case (state)
+    case (state)
       S_CMD: begin
         if (i_valid) begin
           case (cmd_op)
@@ -293,14 +291,14 @@ module task_10 #(
               state_n        = S_WDATA;
             end
             OP_READ: begin
-              // Read does not emit output, internal register operation
+              // Operación interna de registro (sin emisión de paquete)
             end
             OP_OUTPUT: begin
               o_valid_n = 1'b1;
               o_last_n  = i_last;
               o_data_n  = bus_read(cmd_addr);
             end
-            default: ; // OP_NOP
+            default: ;
           endcase
         end
       end
@@ -310,10 +308,10 @@ module task_10 #(
           case (pending_addr)
             4'h0, 4'h1, 4'h2, 4'h3: rfa_we           = 1'b1;
             4'h4, 4'h5, 4'h6, 4'h7: rfb_we           = 1'b1;
-            4'h8:                  serin_shift      = 1'b1;
-            4'h9:                  serout_we        = 1'b1;
-            4'hA:                  timer_load       = 1'b1;
-            4'hB:                  timer_set_target = 1'b1;
+            4'h8:                   serin_shift      = 1'b1;
+            4'h9:                   serout_we        = 1'b1;
+            4'hA:                   timer_load       = 1'b1;
+            4'hB:                   timer_set_target = 1'b1;
             default: ;
           endcase
           state_n = S_CMD;
@@ -322,7 +320,7 @@ module task_10 #(
     endcase
   end
 
-  // ---------- state / output registers ------------------------------------
+  // ---------- Registros de Estado y Salida (Alineación a 1 Ciclo) ----------
   always_ff @(posedge i_clk) begin
     if (i_rst) begin
       state        <= S_CMD;
