@@ -14,10 +14,10 @@ El ELF y XSA de task 8 SI se incluyen: son productos versionados requeridos
 por la infraestructura oficial, no caches prescindibles.
 
 Esta carpeta es una entrega autocontenida del codigo disponible, NO un merge
-con `../team018_repo`. Aquel directorio contiene trabajo local de companeros
+con `../02_Equipo`. Aquel directorio contiene trabajo local de companeros
 que se ha preservado sin sobrescribirlo. Tampoco contiene el historial GitLab:
 para consultar commits anteriores hay que acceder al repositorio de origen.
-Los PDF oficiales de esta edicion estan en `../material` del repositorio GitHub.
+Los PDF oficiales de esta edicion estan en `../01_Normas` del repositorio GitHub.
 
 ## Directorios
 
@@ -84,7 +84,7 @@ Consultar [ENTORNO_JENKINS.md](ENTORNO_JENKINS.md) para el flujo completo.
 
 Esta carpeta se preparo dentro de `Thefalley/INDRA_LUTs`. Las indicaciones
 siguientes describen el empaquetado original del snapshot; la estructura
-actual del repositorio la conserva en `hackathon/2026/entrega`.
+actual del repositorio la conserva en `Hackathon_2026/03_Entrega_Jenkins`.
 No hacer `git add .`, reset, clean ni force-push: mezclarian o perderian trabajo.
 Preparar un commit que incluya SOLO esta entrega y reconciliar el avance
 remoto antes del push. El ignore heredado excluye algunos ficheros de task 8

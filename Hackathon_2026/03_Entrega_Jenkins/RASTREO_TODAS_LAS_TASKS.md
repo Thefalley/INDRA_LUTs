@@ -92,7 +92,7 @@ En ninguna fila se afirma haber encontrado la entrega exacta del concurso.
 ## Task4: estudio especifico
 
 La revision visual de las primeras paginas de
-`../material/04_Frame_Extender_Synopsys.pdf` confirma:
+`../01_Normas/04_Frame_Extender_Synopsys.pdf` confirma:
 
 - Entrada: cabecera8bits `0x4e`, payload120bits con exactamente un1.
 - Indice del primer bit del payload=0; ultimo=119.

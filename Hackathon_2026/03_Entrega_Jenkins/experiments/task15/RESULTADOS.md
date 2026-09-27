@@ -73,7 +73,7 @@ Para sintesis, ejecutar Vivado batch con `experiments/task15/synth_check.tcl`
 desde un directorio de resultados separado.
 Los logs e informes resumidos se conservan en `evidence/`.
 
-Fuente revisada: `../../material/15_LDPC_Encoder.pdf`, las cuatro paginas:
+Fuente revisada: `../../01_Normas/15_LDPC_Encoder.pdf`, las cuatro paginas:
 H*c^T=0, c=u*G, orden del ejemplo, entrada m/n y H por filas,
 salida un byte por bit, comparacion byte a byte y limite de bonus.
 

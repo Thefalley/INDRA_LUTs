@@ -14,4 +14,4 @@ Por ejemplo, para la task 15 hay que leer `15_LDPC_Encoder.pdf` además de los
 documentos generales. `06b_Siemens_Lab_Guide.pdf` complementa la task 6.
 
 No se guardan aquí resultados de simulación ni código de desarrollo: esos viven
-respectivamente en `../entrega` y `../team018_repo`.
+respectivamente en `../03_Entrega_Jenkins` y `../02_Equipo`.

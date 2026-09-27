@@ -5,12 +5,12 @@ contener implementaciones en curso, bancos de prueba y documentación técnica.
 
 ## Antes de modificar una task
 
-1. Lee el PDF correspondiente en [`../material`](../material).
+1. Lee el PDF correspondiente en [`../01_Normas`](../01_Normas).
 2. Conserva el nombre de módulo y la interfaz del wrapper oficial.
 3. Revisa el contexto de la task cuando exista `TASK_CONTEXT.md` en su carpeta.
 4. Considera una prueba local como evidencia técnica, no como resultado oficial.
 
-La entrega que se preparó para Jenkins está separada en [`../entrega`](../entrega).
+La entrega que se preparó para Jenkins está separada en [`../03_Entrega_Jenkins`](../03_Entrega_Jenkins).
 No copies cambios entre ambos directorios sin verificar primero cuál es el objetivo.
 
 Para la información de verificación disponible consulta

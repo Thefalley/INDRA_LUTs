@@ -1,32 +1,21 @@
-# INDRA LUTs — Hackathon
+# INDRA LUTs
 
-Este repositorio reúne el trabajo del equipo y la entrega del hackathon, sin
-mezclar lo que se presentó al juez con las pruebas o desarrollos que quedaron a
-medias.
+Este repositorio separa claramente la referencia histórica, las normas actuales,
+el trabajo del equipo y la entrega preparada para Jenkins.
 
-## Dónde está cada cosa
-
-| Si buscas... | Ve a... |
+| Quiero ver... | Carpeta |
 | --- | --- |
-| Lo que realmente se preparó para Jenkins | [`hackathon/2026/entrega`](hackathon/2026/entrega) |
-| El código que el equipo estaba desarrollando | [`hackathon/2026/team018_repo`](hackathon/2026/team018_repo) |
-| Las normas y PDFs oficiales de las tasks actuales | [`hackathon/2026/material`](hackathon/2026/material) |
-| Un proyecto de una edición anterior | [`hackathon/2024/referencia_historica`](hackathon/2024/referencia_historica) |
+| Guía, ejercicios y proyecto de referencia de 2025 | [`Hackathon_2025`](Hackathon_2025) |
+| Normas y PDFs oficiales actuales | [`Hackathon_2026/01_Normas`](Hackathon_2026/01_Normas) |
+| Cómo preparar servidor, Jenkins, Vivado y Kria | [`Hackathon_2026/00_Entorno`](Hackathon_2026/00_Entorno) |
+| Código que estaba desarrollando el equipo | [`Hackathon_2026/02_Equipo`](Hackathon_2026/02_Equipo) |
+| Lo que se preparó para entregar a Jenkins | [`Hackathon_2026/03_Entrega_Jenkins`](Hackathon_2026/03_Entrega_Jenkins) |
 
-## La idea importante
+## Regla sencilla
 
-La carpeta **entrega** es una fotografía de lo que se dejó listo para evaluar.
-La carpeta **team018_repo** es el espacio de desarrollo: puede contener pruebas,
-experimentos o cambios que no llegaron a la entrega. No deben confundirse.
+Primero se lee la norma de la task. Después se trabaja en `02_Equipo`.
+`03_Entrega_Jenkins` es una fotografía de la entrega: no significa que todo el
+código experimental de `02_Equipo` se haya entregado.
 
-Antes de tocar una task, lee primero su PDF en `hackathon/2026/material`. El
-proyecto de 2024 sirve como referencia, pero no sustituye las reglas actuales.
-
-## Para empezar
-
-1. Abre el PDF de la task que vas a trabajar.
-2. Consulta el código en `hackathon/2026/team018_repo`.
-3. Si necesitas saber qué se entregó, lee
-   [`hackathon/2026/entrega/README_ENTREGA.md`](hackathon/2026/entrega/README_ENTREGA.md).
-
-Los logs, ondas y cachés generados por Vivado/XSim no se suben al repositorio.
+Los directorios `.Xil`, `xsim.dir` y `__pycache__` son cachés generadas por las
+herramientas. No forman parte del proyecto y Git los ignora.
