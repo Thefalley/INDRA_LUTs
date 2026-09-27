@@ -1,5 +1,7 @@
 # INDRA LUTs
 
+> Plantillas y ejemplos externos de hackathones FPGA: [`Recursos_Externos`](Recursos_Externos).
+
 Este repositorio separa claramente la referencia histórica, las normas actuales,
 el trabajo del equipo y la entrega preparada para Jenkins.
 
