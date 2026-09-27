@@ -1,0 +1,33 @@
+# Artefactos locales de Vivado/XSim (regenerables)
+.Xil/
+xsim.dir/
+**/xsim.dir/
+*.wdb
+*.wcfg
+*.jou
+*.log
+*.pb
+*.str
+*.lpr
+*.sdb
+*.rlx
+*.dbg
+*.mem
+*.reloc
+*.rtti
+*.svtype
+*.type
+*.xdbg
+dfx_runtime.txt
+xvlog.log
+xelab.log
+xsim.log
+
+# Resultados transitorios locales; los informes que se entregan viven en entrega_jenkins_e209aad/
+/reports/
+
+# Python y herramientas locales
+__pycache__/
+*.py[cod]
+.venv/
+.vscode/
